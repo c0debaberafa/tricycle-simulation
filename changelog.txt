@@ -1,0 +1,72 @@
+STARTUP GUIDE
+=============
+
+1. OSRM setup
+
+	git clone https://github.com/Project-OSRM/osrm-backend.git
+	cd osrm-backend
+	mkdir -p build
+	cd build
+	cmake .. -DCMAKE_CXX_FLAGS="-Wno-error=array-bounds"
+	cmake --build .
+
+2. Move map to osrm-backend/maps/magin/map_magin.osm
+
+3. Set up OSRM
+
+	./osrm-extract -p ../profiles/car.lua ~/codebase/osrm-backend/maps/magin/map_magin.osm
+	./osrm-partition /home/c0debaberafa/codebase/osrm-backend/maps/magin/map_magin
+	./osrm-customize /home/c0debaberafa/codebase/osrm-backend/maps/magin/map_magin
+
+
+
+
+RUNNING / TESTING
+
+4. Running OSRM server
+
+	./osrm-routed --algorithm mld ../maps/magin/map_magin
+
+5. Run simulation
+
+	python3 -m venv venv
+	source venv/bin/activate
+	python3 __main__.py
+
+
+6. Run visualizer
+
+
+
+
+CHANGELOG
+=========
+
+2/5/25 - R
+	read through code, very minor tweaks
+
+3/5/25 - R
+	fix roaming implementation
+	generate initial roaming graphs
+	turn off watch history and recommendations
+
+	passenger status enum
+		added to create passenger status
+
+	passenger class
+		added status field
+			updated scenarios/real to update status
+
+	entities.py/tricycle
+		findNearbyPassengers() - to detect passengers within accepted pickup radius
+			in - self, passengers, radius*
+			out - nearby (list of nearby passengers / closest passenger)
+
+	scenarios/real.py/simulator/processframe
+		tricycle loop - include nearby passenger detection and pickup
+
+	simulation
+
+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
+
+
