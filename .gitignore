@@ -1,0 +1,17 @@
+# Virtual environments
+generator/venv/
+__pycache__/
+
+# OSRM build and maps
+osrm-backend/build/
+osrm-backend/maps/
+
+# Simulation data
+generator/data/
+
+# Misc
+*.log
+.DS_Store
+.env
+osrm-backend/
+osrm-backend/
