@@ -10,6 +10,11 @@
 
 // L is imported from LeafletJS
 
+function pointsToRaw(path) {
+    // Convert [{type:..., data:[lng,lat]}, ...] to [[lat, lng], ...]
+    return path.map(point => [point.data[1], point.data[0]]);
+}
+
 let map = L.map('map').setView([14.6436,121.0572], 17); // NOTE: modify to show simulation area
 
 L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -48,4 +53,7 @@ async function show_real(id, t, p) {
 }
 
 // use the ID of the run you want to visualize
-show_real("6-1-100-netbueclmvuq", 5, 100)
+// run ID, num trikes, num passengers
+show_real("3-4-10-ukweabybabjp", 3, 10)
+
+// /home/c0debaberafa/codebase/generator/data/real/3-4-10-ukweabybabjp
