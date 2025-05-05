@@ -73,6 +73,21 @@ CHANGELOG
 
 	simulation
 
+5/5/25 - R
+	fixed visualization
+
+	for next session:
+		fix visualization
+			add terminal markers
+			update text
+				tricycles
+					current passengers
+				passengers
+					status
+		roaming
+			pure roaming setup
+
+
 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
 
 
