@@ -22,6 +22,7 @@ STARTUP GUIDE
 
 
 RUNNING / TESTING
+=================
 
 4. Running OSRM server
 
@@ -34,8 +35,13 @@ RUNNING / TESTING
 	python3 __main__.py
 
 
-6. Run visualizer
+6. Run visualization
 
+	(inside generator/, using venv)
+	flask --app server run --port=5050
+
+	(inside visualization/)
+	serve .
 
 
 
