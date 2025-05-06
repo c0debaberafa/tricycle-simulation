@@ -88,6 +88,42 @@ CHANGELOG
 			pure roaming setup
 
 
+5/6/25 - R
+
+	dashboard.py
+		take a look
+	visualization updates
+		show run metadata
+		indicate terminal locations
+			would need to export terminal locations in simulation output
+				* more understanding of how run simulation is done
+	roaming implementation
+		figure out how all passengers can be picked up eventually
+			if not, this would be skewed. take NOTE
+
+	========
+
+	dashboard.py
+		took a look
+	visualization updates
+		created time and location data to events for tricycles
+			for passengers?
+		updated visualization code
+			show passenger spawn and status
+				custom passenger icons, colored per status
+					waiting - red
+					enqueued - orange
+					onboard - yellow
+					completed - green
+			show event pop ups
+				appear
+				load
+				wait
+				drop-off
+	roamming implementation
+
+
+
 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
 
 

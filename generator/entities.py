@@ -254,8 +254,13 @@ class Tricycle(Actor):
 
         # add the starting path
         self.path.append(Point(self.x, self.y))
+
+        # assumes all trikes are created at the same time = 0
+        # if not, time must be passed as a parameter at initialization
         self.events.append({
-            "type": "APPEAR"
+            "type": "APPEAR",
+            "time": 0,
+            "location": [self.x, self.y]
         })
     
     def toJSON(self):
@@ -297,7 +302,7 @@ class Tricycle(Actor):
     def hasPassenger(self):
         return len(self.passengers) > 0
     
-    def loadPassenger(self, p: Passenger):
+    def loadPassenger(self, p: Passenger, current_time: int):
         """
         Attempts to load a passenger and include it into its queue. If there is no more space,
         nothing will happen.
@@ -307,11 +312,15 @@ class Tricycle(Actor):
             return False
         self.events.append({
             "type": "LOAD",
-            "data": p.id
+            "data": p.id,
+            "time": current_time,
+            "location": [self.path[-1].x, self.path[-1].y]
         })
         self.events.append({
             "type": "WAIT",
-            "data": 500
+            "data": 500,
+            "time": current_time,
+            "location": [self.path[-1].x, self.path[-1].y]
         })
         self.passengers.append(p)
         p.status = PassengerStatus.ONBOARD
@@ -362,7 +371,7 @@ class Tricycle(Actor):
 
         return p
 
-    def tryOffload(self):
+    def tryOffload(self, current_time: int):
         """
         Attempts to drop a passenger at the current grid. If a passenger was dropped,
         the tricycle will wait 500ms to simulate waiting for passengers to offload
@@ -385,7 +394,9 @@ class Tricycle(Actor):
                 dropped = True
                 self.events.append({
                     "type": "DROP-OFF",
-                    "data": p.id
+                    "data": p.id, 
+                    "time": current_time,
+                    "location": [self.path[-1].x, self.path[-1].y]
                 })
                 self.passengers = list(filter(lambda x : x.id != p.id, self.passengers))
                 p.status = PassengerStatus.COMPLETED
@@ -394,10 +405,12 @@ class Tricycle(Actor):
         if dropped:
             self.events.append({
                 "type": "WAIT",
-                "data": 500
+                "data": 500,
+                "time": current_time,
+                "location": [self.path[-1].x, self.path[-1].y]
             })
 
-    def checkPassengers(self):
+    def checkPassengers(self, current_time: int):
         """
         Checks of there are passengers that can be loaded in the current grid.
 
@@ -414,12 +427,12 @@ class Tricycle(Actor):
         cell = self.map.get_cell(loc)        
         loaded = []
         for p in cell:
-            if self.loadPassenger(p):
+            if self.loadPassenger(p, current_time):
                 loaded.append(p)
                 self.map.rem(loc, p)
         return loaded
 
-    def moveTrike(self):
+    def moveTrike(self, current_time: int):
         """
         Attempts to move the trike towards the next point in the to_go queue. If the next point is
         too far using the current speed to be reached immediately, the tricycle will only move to
@@ -470,7 +483,9 @@ class Tricycle(Actor):
         else:
             self.events.append({
                 "type": "MOVE",
-                "data": 1
+                "data": 1,
+                "time": current_time,
+                "location": [self.path[-1].x, self.path[-1].y]
             })
 
         if progress >= 1:
@@ -487,10 +502,12 @@ class Tricycle(Actor):
         path = util.find_path_between_points_in_osrm(src_point.toTuple(), dst_point.toTuple()) + [dst_point.toTuple()]
         self.to_go += [Point(*p) for p in path[1:]]
 
-    def finishTrip(self):
+    def finishTrip(self, current_time: int):
         self.active = False
         self.events.append({
-            "type": "FINISH"
+            "type": "FINISH", 
+            "time": current_time,
+            "location": [self.path[-1].x, self.path[-1].y]
         })
 
 class Terminal:
@@ -524,7 +541,7 @@ class Terminal:
     ):
         self.passengers.append(passenger)
     
-    def loadTricycle(self):
+    def loadTricycle(self, current_time: int):
         "Tries to load passenger to the top tricycle"
 
         # only process if there are both passengers and trikes
@@ -541,7 +558,7 @@ class Terminal:
         topTrike = self.queue[0]
         while len(self.passengers) > 0:
             topPassenger = self.passengers[0]
-            if topTrike.loadPassenger(topPassenger):
+            if topTrike.loadPassenger(topPassenger, current_time):
                 self.passengers = self.passengers[1:]
                 res["passengers"].append(topPassenger)
                 waitTime += 0

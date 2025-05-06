@@ -232,6 +232,45 @@ L.Marker.MovingMarker = L.Marker.extend({
             this._animId = L.Util.requestAnimFrame(this._animate, this, false);
             this._animRequested = true;
         }
+    },
+
+    setSimTime: function(simTime) {
+        // Calculate where the marker should be at simTime
+        // This logic should mimic what _animate does, but for a specific time
+        // You may need to store the start time and speed as properties
+
+        // Example logic (you may need to adapt this to your plugin's structure):
+        let elapsed = simTime - this.stime;
+        if (elapsed < 0) elapsed = 0;
+
+        // Find which segment of the path we're on
+        let totalDist = 0;
+        let segmentIndex = 0;
+        let segmentProgress = 0;
+        let found = false;
+
+        for (let i = 0; i < this.path.length - 1; i++) {
+            let segDist = getEuclideanDistance(this.path[i], this.path[i+1]);
+            let segTime = segDist / this.SPEED;
+            if (elapsed < segTime) {
+                segmentIndex = i;
+                segmentProgress = elapsed / segTime;
+                found = true;
+                break;
+            }
+            elapsed -= segTime;
+        }
+        if (!found) {
+            // At the end of the path
+            segmentIndex = this.path.length - 2;
+            segmentProgress = 1;
+        }
+
+        let curPoint = this.path[segmentIndex];
+        let nxtPoint = this.path[segmentIndex + 1];
+        let new_position = interpolatePosition(curPoint, nxtPoint, segmentProgress);
+
+        this.setLatLng(new_position);
     }
 });
 

@@ -423,7 +423,7 @@ class Simulator:
             for trike in tricycles:
                 if not trike.active:
                     continue
-                offloaded = list(trike.tryOffload())
+                offloaded = list(trike.tryOffload(cur_time[0]))
 
                 for passenger in offloaded:
                     passenger.offloadTime = cur_time[0]
@@ -431,7 +431,7 @@ class Simulator:
                 if offloaded:
                     last_active[0] = cur_time[0]
 
-                loaded: list[entities.Passenger] = trike.checkPassengers()
+                loaded: list[entities.Passenger] = trike.checkPassengers(cur_time[0])
 
                 for passenger in loaded:
                     print("----Loaded", passenger.id, trike.id, flush=True)
@@ -442,11 +442,11 @@ class Simulator:
                 if not trike.active:
                     continue
                 try:
-                    time_taken = trike.moveTrike()
+                    time_taken = trike.moveTrike(cur_time[0])
 
                     # Trike does not move
                     if not time_taken:
-                        offloaded = list(trike.tryOffload())
+                        offloaded = list(trike.tryOffload(cur_time[0]))
 
                         for passenger in offloaded:
                             passenger.offloadTime = cur_time[0]
@@ -483,10 +483,10 @@ class Simulator:
                                     trike.addToGo(nearest_terminal.location)
                                 except NoRoute:
                                     print("------No Route found. Finishing trip", flush=True)
-                                    trike.finishTrip()
+                                    trike.finishTrip(cur_time[0])
                             elif nearest_distance is None:
                                 print("------Not able to find any terminal. Finishing trip", flush=True)
-                                trike.finishTrip()
+                                trike.finishTrip(cur_time[0])
                                 
                         else:
                             print("----Trike didn't move. Attempting to load next cycle point")
@@ -494,11 +494,11 @@ class Simulator:
                 except Exception as e:
                     print(f"Encountered error while trying to move tricycle {trike.id}:", e)
                     print(traceback.format_exc())
-                    trike.finishTrip()
+                    trike.finishTrip(cur_time[0])
                 
             for terminal in terminals:
                 while (not terminal.isEmptyOfPassengers()) and (not terminal.isEmptyOfTrikes()):
-                    loadingResult = terminal.loadTricycle()
+                    loadingResult = terminal.loadTricycle(cur_time[0])
                     if len(loadingResult["passengers"]) == 0:
                         break
                     for passenger in loadingResult["passengers"]:

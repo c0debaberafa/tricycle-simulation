@@ -1,3 +1,10 @@
 #map {
     height: 100vh;
 }
+
+.event-popup .leaflet-popup-content-wrapper {
+    background: #ffe066;
+    color: #333;
+    font-weight: bold;
+    border: 2px solid #f59e42;
+}
