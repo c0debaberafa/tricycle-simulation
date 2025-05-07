@@ -29,7 +29,7 @@ function roundPlaces(x, places) {
     return Math.round(x * (10**places)) / (10**places);
 }
 
-const REFRESH_TIME = 33.33;
+const REFRESH_TIME = 16.67;  // 60 FPS for smoother animation
 let GLOBAL_TIME_MS = 0;
 
 function update_time() {
@@ -50,12 +50,13 @@ L.Marker.MovingMarker = L.Marker.extend({
 
     initialize: function (id, path, stime, dtime, speed, events) {
         this.id = id;
-
-        this.SPEED = speed; // not sure with the unit
+        this.SPEED = speed;
         this.path = path;
         this.stime = stime;
         this.dtime = dtime;
         this.events = events;
+        this.eventMarkers = []; // Store references to event markers
+        this.passengers = new Set(); // Track current passengers
 
         // add to map
         if (this.events == null) {
@@ -64,13 +65,13 @@ L.Marker.MovingMarker = L.Marker.extend({
             console.log(this.id, "setting to", path[0]);
         } else {
             L.Marker.prototype.initialize.call(this, [0,0]);
-           this.setLatLng([0,0]);
+            this.setLatLng([0,0]);
             console.log(this.id, "setting to", [0,0]);
         }
         this.addTo(map);
 
-        // add the tooltip
-        this.bindTooltip(`${this.id}`).openTooltip();
+        // add the tooltip with initial passenger state
+        this.updateTooltip();
         
         // simulation specific
         this.simulationState = L.Marker.MovingMarker.notStartedState;
@@ -133,6 +134,59 @@ L.Marker.MovingMarker = L.Marker.extend({
         }
     },
 
+    // Add new method to create event markers
+    createEventMarker: function(lat, lng, message) {
+        const key = `${lat.toFixed(6)},${lng.toFixed(6)}`;
+        if (!window.tooltipStackCounter) window.tooltipStackCounter = {};
+        if (!window.tooltipStackCounter[key]) window.tooltipStackCounter[key] = 0;
+        const offset = window.tooltipStackCounter[key] * 24; // 24px per stacked tooltip
+        window.tooltipStackCounter[key] += 1;
+
+        // Determine marker color based on event type
+        const isLoad = message.includes("LOAD");
+        const isDropoff = message.includes("DROP-OFF");
+        const markerColor = isLoad ? 'yellow' : (isDropoff ? 'green' : 'red');
+        
+        const marker = L.marker([lat, lng], {
+            icon: L.divIcon({
+                className: 'event-marker',
+                html: `<div style="background-color: ${markerColor}; width: 8px; height: 8px; border-radius: 50%;"></div>`
+            })
+        })
+        .addTo(map)
+        .bindTooltip(message, {
+            permanent: false, // Only show on hover
+            direction: 'top',
+            className: 'event-tooltip-stacked',
+            offset: [0, -offset]
+        });
+        
+        this.eventMarkers.push(marker);
+        return marker;
+    },
+
+    // Add method to log events
+    logEvent: function(time, type, data) {
+        const eventLog = document.getElementById('eventLog');
+        const entry = document.createElement('div');
+        entry.className = 'event-log-entry';
+        entry.textContent = `Frame ${time}: ${this.id} ${type} ${data ?? ""}`;
+        eventLog.appendChild(entry);
+        eventLog.scrollTop = eventLog.scrollHeight;
+    },
+
+    // Add method to update tooltip with current passenger list
+    updateTooltip: function() {
+        const passengerList = Array.from(this.passengers).sort((a, b) => {
+            // Extract numbers from passenger IDs for proper sorting
+            const numA = parseInt(a.split('_')[1]);
+            const numB = parseInt(b.split('_')[1]);
+            return numA - numB;
+        }).join(' ');
+        this.unbindTooltip();
+        this.bindTooltip(`${this.id}: ${passengerList}`).openTooltip();
+    },
+
     _animate: function(_timestamp, noRequestAnim) {
         this._animRequested = false;
         const timestamp = GLOBAL_TIME_MS;
@@ -147,32 +201,11 @@ L.Marker.MovingMarker = L.Marker.extend({
                 return;
             }
             
-            // backward compatibility
-            if (this.events == null) {
-                if (this._currentPathIndex+1 < this.path.length) {
-                    const timeElapsed = timestamp - this._prevTimeStamp;
-                    const pathDistanceTravelled = this.SPEED * timeElapsed;
-                    const curPoint = this.path[this._currentPathIndex];
-                    const nxtPoint = this.path[this._currentPathIndex+1];
-                    const segmentProgress = Math.min(1, pathDistanceTravelled / getEuclideanDistance(curPoint, nxtPoint));
-                    const new_position = interpolatePosition(curPoint, nxtPoint, segmentProgress);
-            
-                    // console.log(this.id, timestamp, ":", curPoint, nxtPoint, segmentProgress);
-                    this.setLatLng(new_position);
-                    this.unbindTooltip();
-                    this.bindTooltip(`${this.id}: (${roundPlaces(new_position[0], 4)},${roundPlaces(new_position[1], 4)})`).openTooltip();
-            
-                    if (Math.round(segmentProgress*100) == 100) {
-                        this._prevTimeStamp = timestamp;
-                        this._currentPathIndex += 1;
-                    }
-                }
-            } else {
+            if (this.events != null) {
                 const curEvent = this.events[this._currentEventIndex];
                 if (curEvent.type == "APPEAR") {
                     this.setLatLng(this.path[0]);
-                    this.unbindTooltip();
-                    this.bindTooltip(`${this.id}: Appeared at ${this.path[0]}`).openTooltip();
+                    this.updateTooltip();
                     this._currentEventIndex += 1;
                 } else if (curEvent.type == "MOVE") {
                     const timeElapsed = timestamp - this._prevTimeStamp;
@@ -182,7 +215,6 @@ L.Marker.MovingMarker = L.Marker.extend({
                     const segmentProgress = Math.min(1, pathDistanceTravelled / getEuclideanDistance(curPoint, nxtPoint));
                     const new_position = interpolatePosition(curPoint, nxtPoint, segmentProgress);
             
-                    // console.log(this.id, timestamp, ":", curPoint, nxtPoint, segmentProgress);
                     this.setLatLng(new_position);
 
                     if (Math.round(segmentProgress*100) == 100) {
@@ -195,9 +227,28 @@ L.Marker.MovingMarker = L.Marker.extend({
                         }
                     }
                 } else if (curEvent.type == "DROP-OFF") {
-                    this.unbindTooltip();
-                    this.bindTooltip(`${this.id}: DROPPED-OFF PASSENGER ${curEvent.data}`).openTooltip();
-                    console.log(timestamp-this._startTimeStamp,`${this.id}: DROPPED-OFF PASSENGER ${curEvent.data}`)
+                    const currentPos = this.getLatLng();
+                    const message = `${this.id}: DROP-OFF ${curEvent.data}`;
+                    this.createEventMarker(currentPos.lat, currentPos.lng, message);
+                    this.logEvent(Math.floor((timestamp - this._startTimeStamp) / REFRESH_TIME), curEvent.type, curEvent.data);
+                    console.log(timestamp-this._startTimeStamp, message);
+                    
+                    // Remove passenger from the set
+                    this.passengers.delete(curEvent.data);
+                    this.updateTooltip();
+                    
+                    this._currentEventIndex += 1;
+                } else if (curEvent.type == "LOAD") {
+                    const currentPos = this.getLatLng();
+                    const message = `${this.id}: LOAD ${curEvent.data}`;
+                    this.createEventMarker(currentPos.lat, currentPos.lng, message);
+                    this.logEvent(Math.floor((timestamp - this._startTimeStamp) / REFRESH_TIME), curEvent.type, curEvent.data);
+                    console.log(timestamp-this._startTimeStamp, message);
+                    
+                    // Add passenger to the set
+                    this.passengers.add(curEvent.data);
+                    this.updateTooltip();
+                    
                     this._currentEventIndex += 1;
                 } else if (curEvent.type == "WAIT") {
                     const timeElapsed = timestamp - this._prevTimeStamp;
@@ -205,11 +256,6 @@ L.Marker.MovingMarker = L.Marker.extend({
                     if (curEvent.data <= 0) {
                         this._currentEventIndex += 1;
                     }
-                } else if (curEvent.type == "LOAD") {
-                    this.unbindTooltip();
-                    this.bindTooltip(`${this.id}: LOADED PASSENGER ${curEvent.data}`).openTooltip();
-                    console.log(timestamp-this._startTimeStamp, `${this.id}: LOADED PASSENGER ${curEvent.data}`)
-                    this._currentEventIndex += 1;
                 } else if (curEvent.type == "FINISH") {
                     this.unbindTooltip();
                     this.bindTooltip(`${this.id}: Finished trips`).openTooltip();
@@ -221,12 +267,9 @@ L.Marker.MovingMarker = L.Marker.extend({
                     this._currentEventIndex += 1;
                 }
             }
-
         } else {
-            // reset the timestamp
             this._prevTimeStamp = timestamp;
         }
-
         
         if (!noRequestAnim) {
             this._animId = L.Util.requestAnimFrame(this._animate, this, false);
@@ -271,6 +314,15 @@ L.Marker.MovingMarker = L.Marker.extend({
         let new_position = interpolatePosition(curPoint, nxtPoint, segmentProgress);
 
         this.setLatLng(new_position);
+    },
+
+    // Add cleanup method
+    remove: function() {
+        // Remove all event markers
+        this.eventMarkers.forEach(marker => marker.remove());
+        this.eventMarkers = [];
+        // Call parent remove
+        L.Marker.prototype.remove.call(this);
     }
 });
 

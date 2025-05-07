@@ -7,10 +7,10 @@ if __name__ == '__main__':
     # simulate simple non-roaming cases. For more complex
     # cases, you would need to consult the code in more details
     NUM_TRIKES = 3
-    NUM_TERMINALS = 4
+    NUM_TERMINALS = 2
     NUM_PASSENGERS = 10
     MAX_TIME = 3_600
-    TEST_COUNT = 10
+    TEST_COUNT = 1
     
     # you can look at the code of Simulator for more options
     simulator = Simulator(

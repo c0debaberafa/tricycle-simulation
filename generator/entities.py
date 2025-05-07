@@ -108,32 +108,25 @@ class Map:
         self.grid_length = (x_max - x_min) / num_col
         self.grid_height = (y_max - y_min) / num_row
 
-        # use a dictionary since we expect the map
-        # to be sparsed
-        self.grid = dict()
+        # store all passengers in a flat list
+        self.passengers = []
     
     def add(self, loc, obj):
-        cell = self.grid.get(loc, [])
-        cell.append(obj)
-        self.grid[loc] = cell
+        self.passengers.append(obj)
     
     def rem(self, loc, obj):
-        cell = self.grid.get(loc, [])
-        cell = list(filter(lambda x: x != obj, cell))
-        self.grid[loc] = cell
+        self.passengers = list(filter(lambda x: x != obj, self.passengers))
     
     def get_loc(self, x, y):
         cell_x = int((x -self.x_min) / self.grid_length)
         cell_y = int((y - self.y_min) / self.grid_height)
-
-        # return a tuple so that it is immutable
         return (cell_x, cell_y)
 
     def same_loc(self, x1, y1, x2, y2):
         return self.get_loc(x1, y1) == self.get_loc(x2, y2)
     
     def get_cell(self, loc):
-        return self.grid.get(loc, [])
+        return self.passengers
 
 class Actor:
     """
@@ -373,34 +366,33 @@ class Tricycle(Actor):
 
     def tryOffload(self, current_time: int):
         """
-        Attempts to drop a passenger at the current grid. If a passenger was dropped,
-        the tricycle will wait 500ms to simulate waiting for passengers to offload
-        properly.
+        Attempts to drop passengers within a certain radius of their destination.
+        Uses haversine distance for realistic distance calculation.
         """
         
         if not self.map:
             raise Exception("Not backward compatible. Please use a map")
         
         cur = self.path[-1]
-        loc = self.map.get_loc(cur.x, cur.y)
+        DROPOFF_RADIUS_METERS = 50  # 50 meters dropoff radius
 
-        # check first if there are passengers to offlod
+        # check first if there are passengers to offload
         dropped = False
 
         for index, p in enumerate(self.passengers[:]):
-            p_loc = self.map.get_loc(p.dest.x, p.dest.y)
-            # print("checking", p.id, loc, flush=True)*
-            if p_loc == loc:
+            # Calculate distance using haversine (in meters)
+            distance = util.haversine(*cur.toTuple(), *p.dest.toTuple())
+            if distance <= DROPOFF_RADIUS_METERS:
                 dropped = True
                 self.events.append({
                     "type": "DROP-OFF",
                     "data": p.id, 
                     "time": current_time,
-                    "location": [self.path[-1].x, self.path[-1].y]
+                    "location": [cur.x, cur.y]
                 })
                 self.passengers = list(filter(lambda x : x.id != p.id, self.passengers))
                 p.status = PassengerStatus.COMPLETED
-                print("dropped", p.id, loc, flush=True)
+                print("dropped", p.id, "at distance", distance, "meters", flush=True)
                 yield p
         if dropped:
             self.events.append({
@@ -412,7 +404,8 @@ class Tricycle(Actor):
 
     def checkPassengers(self, current_time: int):
         """
-        Checks of there are passengers that can be loaded in the current grid.
+        Checks if there are passengers that can be loaded within a certain radius of the tricycle.
+        Uses haversine distance for realistic distance calculation.
 
         Returns an array of Passengers.
         """
@@ -421,15 +414,19 @@ class Tricycle(Actor):
             raise Exception("Not backward compatible. Please use a map")
         
         cur = self.path[-1]
-        loc = self.map.get_loc(cur.x, cur.y)
+        PICKUP_RADIUS_METERS = 50  # 50 meters pickup radius
         
-        # check if there are passengers to load
-        cell = self.map.get_cell(loc)        
+        # Get all passengers in the map
         loaded = []
-        for p in cell:
-            if self.loadPassenger(p, current_time):
-                loaded.append(p)
-                self.map.rem(loc, p)
+        for p in self.passengers:
+            # Calculate distance using haversine (in meters)
+            distance = util.haversine(*cur.toTuple(), *p.src.toTuple())
+            if distance <= PICKUP_RADIUS_METERS:
+                if self.loadPassenger(p, current_time):
+                    loaded.append(p)
+                    # Remove from map
+                    self.map.rem(None, p)
+        
         return loaded
 
     def moveTrike(self, current_time: int):

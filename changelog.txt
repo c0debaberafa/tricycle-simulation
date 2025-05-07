@@ -122,6 +122,16 @@ CHANGELOG
 				drop-off
 	roamming implementation
 
+3/7/25
+
+	updated visualization
+		trikes now indicate passengers inside
+		event markers for pick up and drop off
+		event log
+	updated entities, basically to make generated data as real as possible
+		pickup / dropoff proximity instead of grid detection
+	
+
 
 
 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
