@@ -15,7 +15,7 @@ import config
 import entities
 import algos
 
-from entities import PassengerStatus
+from entities import PassengerStatus, TricycleStatus
 from util import NoRoute, get_euclidean_distance, find_path_between_points_in_osrm
 
 from scenarios.util import (
@@ -88,7 +88,7 @@ class Simulator:
         ):
         """
         Parameters:
-        - totalTrkes: int - the number of tricycles to be generated. Tricycles are generated at the start of a simulation run,
+        - totalTrikes: int - the number of tricycles to be generated. Tricycles are generated at the start of a simulation run,
             so this number is fixed for the duration of a simulation run.
         - totalTerminals: int - the number of terminals to be generated. Terminals are also fixed throughout the simulation
         - totalPassengers: int - the number of passengers to be generated. 
@@ -208,9 +208,6 @@ class Simulator:
             validFixedHotspots = get_valid_points(fixedHotspots)
             self.hotspotsCache = validFixedHotspots
             cache = validFixedHotspots
-        # print([(p.y,p.x) for p in validFixedHotspots])
-        # # print(list(zip(fixedHotspots, validFixedHotspots)))
-        # # validFixedHotspots = fixedHotspots
 
         # Generate data files
         if not os.path.exists(f"data/real/{run_id}"):
@@ -221,8 +218,7 @@ class Simulator:
             config.TOP_LEFT_X,
             config.BOT_RIGHT_Y,
             config.BOT_RIGHT_X,
-            config.TOP_LEFT_Y,
-            20, 20
+            config.TOP_LEFT_Y
         )
 
         hotspots: list[entities.Point] = [gen_random_valid_point() for _ in range(self.hotspots)]
@@ -254,19 +250,8 @@ class Simulator:
         for idx in range(self.totalTrikes):
             trike = None
             in_terminal: entities.Terminal = None
-            # Generate roaming tricycles
             if random.random() < self.roamingTrikeChance:
-                # find a valid roam path
-                # while True:
-                #     try:
-                #         checkpoints = [x.location for x in random.sample(terminals, k=max(2, len(terminals)))]
-                #         checkpoints.insert(1, random.choice(hotspots))
-                #         roam_path = gen_random_bnf_roam_path_with_points(*checkpoints)
-                #         break
-                #     except Exception as e:
-                #         print(f"exceptioon! {e}")
-                #         continue
-
+                # Generate roaming tricycles on the road
                 while True:
                     try:
                         if len(terminals) < 2:
@@ -293,7 +278,7 @@ class Simulator:
 
                 print("Generated {} with roam path starting at {}".format(trike.id, roam_path.getStartPoint().toTuple()), flush=True)
             else:
-                # spawn in one of the terminals
+                # Generate non-roaming tricycles at terminals
                 if len(self.terminalTrikeDistrib):
                     trike_source = None
                     x = random.random()
@@ -306,7 +291,7 @@ class Simulator:
                             x -= chance
                     
                     if trike_source is None:
-                        raise Exception("Improper trike distrib")
+                        raise Exception("Improper trike distribution")
                 else:
                     in_terminal = random.choice(terminals)
                     trike_source = entities.Point(*in_terminal.location.toTuple())
@@ -330,20 +315,21 @@ class Simulator:
 
             tricycles.append(trike)
         
-        # Generate the initial passengers
-        passengers_left = self.totalPassengers
+        # Generate passengers
+        # By design, passengers are generated at the start of the simulation
+        # If you want to implement passengers being generated throughout the simulation,
+        # you will need to modify this
         passenger_id = 0
         passengers: list[entities.Passenger] = []
 
-        num_start = round(self.passengerSpawnStartPercent * self.totalPassengers)
-        for _ in range(num_start):
+        for _ in range(self.totalPassengers):
             in_terminal = None
             if random.random() < self.roadPassengerChance:
+                # Generate road passenger on the road
                 passenger_source = random.choice(hotspots)
                 while True:
                     try:
                         if self.useFixedHotspots:
-                            # passenger_dest = entities.Point(*random.choice(validFixedHotspots))
                             passenger_dest = random.choice(validFixedHotspots)
                         else:
                             passenger_dest = gen_random_valid_point()
@@ -361,12 +347,11 @@ class Simulator:
                     deathTime=-1
                 )
 
-                pp_loc = map.get_loc(*passenger_source.toTuple())
-                map.add(pp_loc, passenger)
+                # Road passengers only go to map
+                map.addPassenger(passenger)
             else:
-                # spawn in one of the terminals
+                # Generate terminal passenger
                 if self.useFixedHotspots:
-                    # passenger_dest = entities.Point(*random.choice(validFixedHotspots))
                     passenger_dest = random.choice(validFixedHotspots)
                 else:
                     passenger_dest = gen_random_valid_point()
@@ -382,7 +367,7 @@ class Simulator:
                             x -= chance
                     
                     if passenger_source is None:
-                        raise Exception("Improper passenger distrib")
+                        raise Exception("Improper passenger distribution")
                 else:
                     in_terminal = random.choice(terminals)
                     passenger_source = entities.Point(*in_terminal.location.toTuple())
@@ -395,13 +380,14 @@ class Simulator:
                     deathTime=-1
                 )
 
+                # Add passenger to both terminal and map
                 if in_terminal:
                     in_terminal.addPassenger(passenger)
+                map.addPassenger(passenger)  # Add all passengers to map
 
             print("Generated {} at {} going to {}".format(passenger.id, passenger_source.toTuple(), passenger_dest.toTuple()), flush=True)
 
             passengers.append(passenger)
-            passengers_left -= 1
             passenger_id += 1
         
         # do the actual simulation
@@ -411,33 +397,45 @@ class Simulator:
 
         def process_passenger(passenger: entities.Passenger, trike: entities.Tricycle):
             print("Passenger loaded", passenger.id, "by", trike.id, flush=True)
-            passenger.deathTime = cur_time[0]
+            passenger.pickupTime = cur_time[0]
             passenger.status = PassengerStatus.ONBOARD
 
         def process_frame():
             """
-            Each frames are generated here. You can modify the subtleties of the interactions here.
+            Each frame is generated here. You can modify the subtleties of the interactions here.
             """
             
-            # Offloading then loading passengers
+            # 1. First detect nearby passengers and plan routes
             for trike in tricycles:
                 if not trike.active:
                     continue
+                # Only roaming tricycles should look for passengers on the road
+                if trike.isRoaming:
+                    detected = trike.enqueueNearbyPassengers(cur_time[0])
+                    if detected:
+                        print(f"----Detected {len(detected)} nearby passengers for {trike.id}", flush=True)
+            
+            # 2. Handle offloading/loading
+            for trike in tricycles:
+                if not trike.active:
+                    continue
+
+                # Offloading
                 offloaded = list(trike.tryOffload(cur_time[0]))
 
                 for passenger in offloaded:
-                    passenger.offloadTime = cur_time[0]
                     print("----Offloaded", passenger.id, trike.id, flush=True)
                 if offloaded:
                     last_active[0] = cur_time[0]
 
-                loaded: list[entities.Passenger] = trike.checkPassengers(cur_time[0])
+                # Loading
+                loaded: list[entities.Passenger] = trike.tryLoad(cur_time[0])
 
                 for passenger in loaded:
                     print("----Loaded", passenger.id, trike.id, flush=True)
                     process_passenger(passenger, trike)
                 
-            # Moving tricycles
+            # 3. Move tricycles
             for trike in tricycles:
                 if not trike.active:
                     continue
@@ -449,14 +447,13 @@ class Simulator:
                         offloaded = list(trike.tryOffload(cur_time[0]))
 
                         for passenger in offloaded:
-                            passenger.offloadTime = cur_time[0]
                             print("----Offloaded", passenger.id, trike.id, flush=True)
                         if offloaded:
                             last_active[0] = cur_time[0]
 
                         if trike.hasPassenger():
                             print("----Trike didn't move. Will load next passenger", trike.id, flush=True)
-                            p = trike.processNextPassenger() 
+                            p = trike.scheduleNextPassenger() 
                             if p is not None:
                                 print("--------", p.id)
                             else:
@@ -467,9 +464,18 @@ class Simulator:
                             nearest_terminal = None
                             nearest_distance = None
                             for terminal in terminals:
-                                if map.same_loc(*terminal.location.toTuple(), *trike.curPoint().toTuple()):
+                                # Only consider a tricycle to be at a terminal if:
+                                # 1. It's physically close enough, AND
+                                # 2. It's in a state where it can be picked up by a terminal
+                                is_at_terminal = (
+                                    map.isAtLocation(terminal.location, trike.curPoint()) and 
+                                    trike.status in [TricycleStatus.IDLE, TricycleStatus.RETURNING_TO_TERMINAL]
+                                )
+                                
+                                if is_at_terminal:
                                     print("------Tricycle parked in terminal", trike.id, terminal.location.toTuple(), flush=True)
                                     terminal.addTricycle(trike)
+                                    trike.status = TricycleStatus.TERMINAL
                                     nearest_terminal = None
                                     nearest_distance = -1
                                     break

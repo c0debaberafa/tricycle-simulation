@@ -8,7 +8,7 @@ if __name__ == '__main__':
     # cases, you would need to consult the code in more details
     NUM_TRIKES = 3
     NUM_TERMINALS = 2
-    NUM_PASSENGERS = 10
+    NUM_PASSENGERS = 20
     MAX_TIME = 3_600
     TEST_COUNT = 1
     
@@ -17,8 +17,8 @@ if __name__ == '__main__':
         totalTrikes=NUM_TRIKES,
         totalTerminals=NUM_TERMINALS,
         totalPassengers=NUM_PASSENGERS,
-        roadPassengerChance=0.5,
-        roamingTrikeChance=0.5,
+        roadPassengerChance=1.0,
+        roamingTrikeChance=1.0,
         useFixedHotspots=True, # only use if you have setup hotspots in config
         useFixedTerminals=False, # only use if you have setup hotspots in config
         useSmartScheduler=True,

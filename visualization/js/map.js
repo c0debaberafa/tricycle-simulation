@@ -115,14 +115,17 @@ async function show_real(id, t, p) {
     // Initialize passenger markers
     for(let i=0; i<passengers.length; i++) {
         const passenger = passengers[i];
-        passenger_marker = L.Marker.movingMarker(
+        // Create a marker that only shows events, no movement
+        const passenger_marker = L.Marker.movingMarker(
             passenger.id,
-            pointsToRaw(passenger.path), 
-            passenger.createTime * FRAME_DURATION_MS, // Convert frame to ms
-            passenger.deathTime !== -1 ? passenger.deathTime * FRAME_DURATION_MS : Infinity, // Convert frame to ms
-            0
+            [[passenger.src[1], passenger.src[0]]], // Convert [x,y] to [lat,lng] format
+            passenger.createTime * FRAME_DURATION_MS,
+            passenger.deathTime !== -1 ? passenger.deathTime * FRAME_DURATION_MS : Infinity,
+            0,
+            passenger.events
         );
-        passenger_marker.start()
+        // Don't add the marker to the map, just start it to process events
+        passenger_marker.start();
     }
 
     // Start simulation
@@ -131,7 +134,7 @@ async function show_real(id, t, p) {
 
 // use the ID of the run you want to visualize
 // run ID, num trikes, num passengers
-show_real("3-4-10-ehpbvmilmwsn", 3, 10)
+show_real("3-2-20-qrzmaciukogo", 3, 20)
 
-// /home/c0debaberafa/codebase/generator/data/real/3-4-10-ehpbvmilmwsn
+// / 3-1-20-derpniusjjsm
 

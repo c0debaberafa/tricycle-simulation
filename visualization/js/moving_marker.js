@@ -58,20 +58,22 @@ L.Marker.MovingMarker = L.Marker.extend({
         this.eventMarkers = []; // Store references to event markers
         this.passengers = new Set(); // Track current passengers
 
-        // add to map
-        if (this.events == null) {
-            L.Marker.prototype.initialize.call(this, path[0]);
-            this.setLatLng(path[0]);
-            console.log(this.id, "setting to", path[0]);
-        } else {
-            L.Marker.prototype.initialize.call(this, [0,0]);
-            this.setLatLng([0,0]);
-            console.log(this.id, "setting to", [0,0]);
-        }
-        this.addTo(map);
+        // Only create and add the base marker for tricycles
+        if (!this.id.startsWith("passenger")) {
+            if (this.events == null) {
+                L.Marker.prototype.initialize.call(this, path[0]);
+                this.setLatLng(path[0]);
+                console.log(this.id, "setting to", path[0]);
+            } else {
+                L.Marker.prototype.initialize.call(this, [0,0]);
+                this.setLatLng([0,0]);
+                console.log(this.id, "setting to", [0,0]);
+            }
+            this.addTo(map);
 
-        // add the tooltip with initial passenger state
-        this.updateTooltip();
+            // add the tooltip with initial passenger state
+            this.updateTooltip();
+        }
         
         // simulation specific
         this.simulationState = L.Marker.MovingMarker.notStartedState;
@@ -145,7 +147,27 @@ L.Marker.MovingMarker = L.Marker.extend({
         // Determine marker color based on event type
         const isLoad = message.includes("LOAD");
         const isDropoff = message.includes("DROP-OFF");
-        const markerColor = isLoad ? 'yellow' : (isDropoff ? 'green' : 'red');
+        const isPassengerAppear = message.includes("APPEAR") && this.id.startsWith("passenger");
+        const isTrikeAppear = message.includes("APPEAR") && this.id.startsWith("trike");
+        const isEnqueue = message.includes("ENQUEUE");
+        const isReset = message.includes("RESET");
+
+        let markerColor;
+        if (isPassengerAppear) {
+            markerColor = 'red';
+        } else if (isTrikeAppear) {
+            markerColor = 'blue';
+        } else if (isEnqueue) {
+            markerColor = 'orange';
+        } else if (isReset) {
+            markerColor = 'red';
+        } else if (isLoad) {
+            markerColor = 'yellow';
+        } else if (isDropoff) {
+            markerColor = 'green';
+        } else {
+            markerColor = 'gray';
+        }
         
         const marker = L.marker([lat, lng], {
             icon: L.divIcon({
@@ -204,8 +226,16 @@ L.Marker.MovingMarker = L.Marker.extend({
             if (this.events != null) {
                 const curEvent = this.events[this._currentEventIndex];
                 if (curEvent.type == "APPEAR") {
-                    this.setLatLng(this.path[0]);
+                    // For passengers, use the event location directly
+                    const location = this.id.startsWith("passenger") ? 
+                        [curEvent.location[1], curEvent.location[0]] : // Convert [x,y] to [lat,lng]
+                        this.path[0];
+                    this.setLatLng(location);
                     this.updateTooltip();
+                    // Create event marker for APPEAR
+                    const message = `${this.id}: ${curEvent.type}`;
+                    this.createEventMarker(location[0], location[1], message);
+                    this.logEvent(Math.floor((timestamp - this._startTimeStamp) / REFRESH_TIME), curEvent.type);
                     this._currentEventIndex += 1;
                 } else if (curEvent.type == "MOVE") {
                     const timeElapsed = timestamp - this._prevTimeStamp;
@@ -226,29 +256,29 @@ L.Marker.MovingMarker = L.Marker.extend({
                             this._currentEventIndex += 1;
                         }
                     }
-                } else if (curEvent.type == "DROP-OFF") {
-                    const currentPos = this.getLatLng();
-                    const message = `${this.id}: DROP-OFF ${curEvent.data}`;
-                    this.createEventMarker(currentPos.lat, currentPos.lng, message);
+                } else if (curEvent.type == "DROP-OFF" || curEvent.type == "LOAD" || 
+                          curEvent.type == "ENQUEUE" || curEvent.type == "RESET") {
+                    // Store current position and ensure it's maintained
+                    const eventPoint = this.path[this._currentPathIndex];
+                    this.setLatLng(eventPoint);
+                    
+                    const message = `${this.id}: ${curEvent.type} ${curEvent.data || ""}`;
+                    this.createEventMarker(eventPoint[0], eventPoint[1], message);
                     this.logEvent(Math.floor((timestamp - this._startTimeStamp) / REFRESH_TIME), curEvent.type, curEvent.data);
                     console.log(timestamp-this._startTimeStamp, message);
                     
-                    // Remove passenger from the set
-                    this.passengers.delete(curEvent.data);
-                    this.updateTooltip();
+                    // Update passenger set for tricycles
+                    if (this.id.startsWith("trike")) {
+                        if (curEvent.type == "DROP-OFF") {
+                            this.passengers.delete(curEvent.data);
+                        } else if (curEvent.type == "LOAD") {
+                            this.passengers.add(curEvent.data);
+                        }
+                        this.updateTooltip();
+                    }
                     
-                    this._currentEventIndex += 1;
-                } else if (curEvent.type == "LOAD") {
-                    const currentPos = this.getLatLng();
-                    const message = `${this.id}: LOAD ${curEvent.data}`;
-                    this.createEventMarker(currentPos.lat, currentPos.lng, message);
-                    this.logEvent(Math.floor((timestamp - this._startTimeStamp) / REFRESH_TIME), curEvent.type, curEvent.data);
-                    console.log(timestamp-this._startTimeStamp, message);
-                    
-                    // Add passenger to the set
-                    this.passengers.add(curEvent.data);
-                    this.updateTooltip();
-                    
+                    // Update timestamps to maintain position
+                    this._prevTimeStamp = timestamp;
                     this._currentEventIndex += 1;
                 } else if (curEvent.type == "WAIT") {
                     const timeElapsed = timestamp - this._prevTimeStamp;
@@ -327,5 +357,7 @@ L.Marker.MovingMarker = L.Marker.extend({
 });
 
 L.Marker.movingMarker = function (id, path, stime=0, dtime=Infinity, speed=0.0000005, events=null) {
+    // Speed is already scaled from map.js, just use it directly
+    console.log(`Creating marker ${id} with speed ${speed} degrees/ms`);
     return new L.Marker.MovingMarker(id, path, stime, dtime, speed, events);
 }

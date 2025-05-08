@@ -130,7 +130,31 @@ CHANGELOG
 		event log
 	updated entities, basically to make generated data as real as possible
 		pickup / dropoff proximity instead of grid detection
-	
+
+3/8/25 2PM - 10PM
+
+	review pickup dropoff proximity functions and simulate
+		fix checkPassengers -> instead of immediately loading, travel to that point. same for drop off
+			separated terminal passengers from roaming passengers
+				roaming trikes only pick up along the road
+				non roaming can pick up both along the road and at terminals
+				* consider including terminal pickup but only if there is no line. this is realistic?
+					also i think it fixes the error from the last simulation. we're coming full circle.
+		fix wait handling -> it doesnt seem like trikes are waiting 500ms either in the simulation or in the visualization
+	visualization updates
+		simulation parameters -- modify metadata.json
+		indicate simulation parameters / output
+		add simulation parameters / output 
+			passengers delievered
+			passengers waiting
+		fix passenger event handling
+			do we even need status?
+		check trike event handling
+			should they all have finish trip?
+	graphing
+		dashboard.py modification
+
+
 
 
 
