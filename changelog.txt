@@ -48,10 +48,10 @@ RUNNING / TESTING
 CHANGELOG
 =========
 
-2/5/25 - R
+5/2/25 - R
 	read through code, very minor tweaks
 
-3/5/25 - R
+5/3/25 - R
 	fix roaming implementation
 	generate initial roaming graphs
 	turn off watch history and recommendations
@@ -122,7 +122,7 @@ CHANGELOG
 				drop-off
 	roamming implementation
 
-3/7/25
+5/7/25
 
 	updated visualization
 		trikes now indicate passengers inside
@@ -131,7 +131,7 @@ CHANGELOG
 	updated entities, basically to make generated data as real as possible
 		pickup / dropoff proximity instead of grid detection
 
-3/8/25 2PM - 10PM
+5/8/25 2PM - 10PM
 
 	review pickup dropoff proximity functions and simulate
 		fix checkPassengers -> instead of immediately loading, travel to that point. same for drop off
@@ -155,7 +155,23 @@ CHANGELOG
 		dashboard.py modification
 
 
-
+5/9/25
+	quite a bit
+	a few things to consider
+		passenger spawn
+			currently all spawn at terminal
+		roaming tricycle behavior
+			currently terminals are endpoints for roaming paths
+			allow to pick up at terminals, as long as no tricycle is lined up?
+			allow pick up of passengers, even during SERVING? 
+		nonroaming tricycle behavior
+			allow tricycles to pickup along the road for RETURNING TO TERMINAL?
+	visualization
+		roaming endpoints -> large blue circle
+		update trike tooltip to only show passenger indices
+		tricycle status log
+			change moving marker color based on status?
+		pause / play?
 
 
 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
