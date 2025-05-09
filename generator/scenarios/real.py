@@ -61,8 +61,9 @@ def smart_scheduler(src: entities.Point, passengers: list[entities.Passenger]) -
 
 defaultTrikeConfig = {
     "capacity": 3,
-    "speed": 0.0000006, 
+    "speed": 5.556,  # Default to meters per second (20 km/h)
     "scheduler": smart_scheduler,
+    "useMeters": True  # Always use meters for consistency
 }
 
 cache = None
@@ -161,8 +162,13 @@ class Simulator:
         if trikeCapacity is not None:
             self.trikeConfig["capacity"] = trikeCapacity
         if isRealistic:
-            self.trikeConfig["speed"] = 5.556
+            self.trikeConfig["speed"] = 5.556  # 20 km/h in meters per second
             self.trikeConfig["useMeters"] = True
+        else:
+            # Convert to degrees per frame for non-realistic mode
+            # 5.556 m/s * (1 degree/111000m) * (1s/1000ms) = 0.00005 degrees per frame
+            self.trikeConfig["speed"] = 0.00005
+            self.trikeConfig["useMeters"] = False
     
     def run(
             self, 
@@ -275,7 +281,6 @@ class Simulator:
                     map=map,
                     **self.trikeConfig
                 )
-
                 print("Generated {} with roam path starting at {}".format(trike.id, roam_path.getStartPoint().toTuple()), flush=True)
             else:
                 # Generate non-roaming tricycles at terminals
@@ -313,6 +318,7 @@ class Simulator:
 
                 print("Generated {} at {}".format(trike.id, trike_source.toTuple()), flush=True)
 
+            map.addTricycle(trike)
             tricycles.append(trike)
         
         # Generate passengers
@@ -511,6 +517,9 @@ class Simulator:
                         process_passenger(passenger, loadingResult["tricycle"])
                     terminal.popTricycle()
             
+            # Check for enqueued passengers that have timed out
+            map.checkEnqueuedPassengers(cur_time[0])
+            
             # update the time
             cur_time[0] += 1 if self.isRealistic else entities.MS_PER_FRAME
 
@@ -524,6 +533,41 @@ class Simulator:
 
         print("Finished simulation {}. Took {} seconds.".format(run_id, elapsed_time), flush=True)
 
+        # Calculate summary statistics
+        completed_trips = 0
+        total_wait_time = 0
+        total_travel_time = 0
+        total_distance = 0
+        total_productive_distance = 0
+        active_tricycles = 0
+
+        # Process passenger statistics
+        for passenger in passengers:
+            if passenger.status == PassengerStatus.COMPLETED:
+                completed_trips += 1
+                total_wait_time += passenger.pickupTime - passenger.createTime
+                total_travel_time += passenger.deathTime - passenger.pickupTime
+
+        # Process tricycle statistics
+        for trike in tricycles:
+            if trike.active:
+                active_tricycles += 1
+            total_distance += trike.totalDistanceM
+            total_productive_distance += trike.totalProductiveDistanceM
+
+        # Print summary
+        print("\nSimulation Summary:")
+        print("------------------")
+        print(f"Total Trips Completed: {completed_trips}")
+        print(f"Completion Rate: {(completed_trips/self.totalPassengers)*100:.1f}%")
+        print(f"Average Wait Time: {total_wait_time/completed_trips if completed_trips > 0 else 0:.1f} seconds")
+        print(f"Average Travel Time: {total_travel_time/completed_trips if completed_trips > 0 else 0:.1f} seconds")
+        print(f"Total Distance Traveled: {total_distance/1000:.1f} km")
+        print(f"Productive Distance: {total_productive_distance/1000:.1f} km")
+        print(f"Efficiency: {(total_productive_distance/total_distance)*100:.1f}%")
+        print(f"Active Tricycles: {active_tricycles}/{self.totalTrikes}")
+        print("------------------")
+
         last_active[0] += 1 if self.isRealistic else entities.MS_PER_FRAME
 
         run_metadata["endTime"] = cur_time
@@ -533,6 +577,35 @@ class Simulator:
         # save the metadata
         with open(f"data/real/{run_id}/metadata.json", "w+") as f:
             json.dump(run_metadata, f)
+        
+        # save all terminal data in a single file
+        terminals_data = []
+        for idx, terminal in enumerate(terminals):
+            terminal_data = {
+                "id": f"terminal_{idx}",
+                "location": terminal.location.toTuple(),
+                "capacity": terminal.capacity,
+                "remaining_passengers": len(terminal.passengers),
+                "remaining_tricycles": len(terminal.queue)
+            }
+            terminals_data.append(terminal_data)
+        with open(f"data/real/{run_id}/terminals.json", "w+") as f:
+            json.dump(terminals_data, f)
+        
+        # save roam endpoints for roaming tricycles
+        roam_endpoints = []
+        for trike in tricycles:
+            if trike.isRoaming and trike.roamPath:
+                roam_data = {
+                    "tricycle_id": trike.id,
+                    "start_point": trike.roamPath.getStartPoint().toTuple(),
+                    "end_point": trike.roamPath.path[-1].toTuple(),
+                    "checkpoints": [point.toTuple() for point in trike.roamPath.path]
+                }
+                roam_endpoints.append(roam_data)
+        
+        with open(f"data/real/{run_id}/roam_endpoints.json", "w+") as f:
+            json.dump(roam_endpoints, f)
         
         # save the tricycles
         for trike in tricycles:

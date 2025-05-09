@@ -16,6 +16,12 @@ const SPEED_MULTIPLIER = 5.0;  // Increase speed for better visualization
 let SIM_TIME = 0;  // Current simulation frame
 let allMovingMarkers = [];  // Store references to all moving markers
 let tooltipStackCounter = {};  // Track stacked tooltips at same location
+let passengerStates = {
+    WAITING: new Set(),
+    ENQUEUED: new Set(),
+    ONBOARD: new Set(),
+    COMPLETED: new Set()
+};
 
 // ===== Map Initialization =====
 let map = L.map('map').setView([14.6436,121.0572], 17);
@@ -56,6 +62,67 @@ function pointsToRaw(path) {
     return path.map(point => [point.data[1], point.data[0]]);
 }
 
+/**
+ * Create a circular marker with specified color
+ * @param {Array} latlng - [lat, lng] coordinates
+ * @param {string} color - Color of the marker
+ * @param {string} tooltip - Tooltip text
+ * @returns {L.Marker} Leaflet marker
+ */
+function createCircleMarker(latlng, color, tooltip) {
+    return L.marker(latlng, {
+        icon: L.divIcon({
+            className: 'circle-marker',
+            html: `<div style="background-color: ${color}; width: 8px; height: 8px; border-radius: 50%;"></div>`
+        })
+    })
+    .addTo(map)
+    .bindTooltip(tooltip, {
+        permanent: false,
+        direction: 'top'
+    });
+}
+
+/**
+ * Create a square marker for terminals
+ * @param {Array} latlng - [lat, lng] coordinates
+ * @param {string} tooltip - Tooltip text
+ * @returns {L.Marker} Leaflet marker
+ */
+function createTerminalMarker(latlng, tooltip) {
+    return L.marker(latlng, {
+        icon: L.divIcon({
+            className: 'terminal-marker',
+            html: `<div style="background-color: black; width: 12px; height: 12px;"></div>`
+        })
+    })
+    .addTo(map)
+    .bindTooltip(tooltip, {
+        permanent: false,
+        direction: 'top'
+    });
+}
+
+/**
+ * Create a square marker for roam endpoints
+ * @param {Array} latlng - [lat, lng] coordinates
+ * @param {string} tooltip - Tooltip text
+ * @returns {L.Marker} Leaflet marker
+ */
+function createRoamEndpointMarker(latlng, tooltip) {
+    return L.marker(latlng, {
+        icon: L.divIcon({
+            className: 'roam-endpoint-marker',
+            html: `<div style="background-color: grey; width: 12px; height: 12px;"></div>`
+        })
+    })
+    .addTo(map)
+    .bindTooltip(tooltip, {
+        permanent: false,
+        direction: 'top'
+    });
+}
+
 // ===== Simulation Control =====
 
 /**
@@ -84,13 +151,85 @@ function simulationTick() {
  * @param {number} p - Number of passengers
  */
 async function show_real(id, t, p) {
+    console.log(`Loading simulation data for run ${id}`);
+    
+    // Reset passenger states
+    passengerStates = {
+        WAITING: new Set(),
+        ENQUEUED: new Set(),
+        ONBOARD: new Set(),
+        COMPLETED: new Set()
+    };
+
     // Retrieve simulation data
     const api = `http://localhost:5050/real/${id}/${t}/${p}`
     const { trikes, passengers } = await fetch(api).then(res => res.json());
 
+    // Initialize all passengers as WAITING
+    passengers.forEach(passenger => {
+        passengerStates.WAITING.add(passenger.id);
+    });
+    updatePassengerStatus();
+
     // Clear existing visualization
     allMovingMarkers.forEach(marker => marker.remove());
     allMovingMarkers = [];
+
+    // Load and display terminal data
+    console.log('Loading terminal data...');
+    try {
+        const terminalsUrl = `http://localhost:5050/real/${id}/terminals.json`;
+        console.log(`Fetching terminal data from: ${terminalsUrl}`);
+        const terminalsResponse = await fetch(terminalsUrl);
+        if (!terminalsResponse.ok) {
+            throw new Error(`HTTP error! status: ${terminalsResponse.status}`);
+        }
+        const terminals = await terminalsResponse.json();
+        console.log('Loaded terminals:', terminals);
+        terminals.forEach(terminal => {
+            createTerminalMarker(
+                [terminal.location[1], terminal.location[0]], // Convert [x,y] to [lat,lng]
+                `Terminal ${terminal.id}: ${terminal.remaining_passengers} passengers, ${terminal.remaining_tricycles} tricycles`
+            );
+        });
+    } catch (error) {
+        console.error('Failed to load terminals:', error);
+    }
+
+    // Load and display roam endpoints
+    console.log('Loading roam endpoints...');
+    try {
+        const roamUrl = `http://localhost:5050/real/${id}/roam_endpoints.json`;
+        console.log(`Fetching roam endpoints from: ${roamUrl}`);
+        const roamResponse = await fetch(roamUrl);
+        if (!roamResponse.ok) {
+            throw new Error(`HTTP error! status: ${roamResponse.status}`);
+        }
+        const roamEndpoints = await roamResponse.json();
+        console.log('Loaded roam endpoints:', roamEndpoints);
+        roamEndpoints.forEach(endpoint => {
+            // Log the raw endpoint data
+            console.log('Processing roam endpoint:', endpoint);
+            
+            // Create marker for start point
+            const startLatlng = [endpoint.start_point[1], endpoint.start_point[0]];
+            console.log('Start point coordinates:', startLatlng);
+            createRoamEndpointMarker(
+                startLatlng,
+                `Roam Start: ${endpoint.tricycle_id}`
+            );
+
+            // Create marker for end point
+            const endLatlng = [endpoint.end_point[1], endpoint.end_point[0]];
+            console.log('End point coordinates:', endLatlng);
+            createRoamEndpointMarker(
+                endLatlng,
+                `Roam End: ${endpoint.tricycle_id}`
+            );
+        });
+    } catch (error) {
+        console.error('Failed to load roam endpoints:', error);
+    }
 
     // Initialize trike markers
     for(let i=0; i<trikes.length; i++) {
@@ -132,9 +271,52 @@ async function show_real(id, t, p) {
     simulationTick();
 }
 
+function updatePassengerStatus() {
+    let statusDiv = document.getElementById('passengerStatus');
+    if (!statusDiv) {
+        // Create the status div if it doesn't exist
+        statusDiv = document.createElement('div');
+        statusDiv.id = 'passengerStatus';
+        statusDiv.style.position = 'absolute';
+        statusDiv.style.right = '20px';
+        statusDiv.style.top = '20px';
+        statusDiv.style.backgroundColor = 'white';
+        statusDiv.style.padding = '10px';
+        statusDiv.style.border = '1px solid #ccc';
+        statusDiv.style.borderRadius = '5px';
+        statusDiv.style.fontFamily = 'monospace';
+        statusDiv.style.zIndex = '1000';
+        statusDiv.style.whiteSpace = 'pre';
+        document.body.appendChild(statusDiv);
+    }
+
+    // Format passenger numbers (remove 'passenger_' prefix and sort numerically)
+    const formatPassengers = (set) => Array.from(set)
+        .map(id => id.replace('passenger_', ''))
+        .sort((a, b) => parseInt(a) - parseInt(b))
+        .join(' ');
+
+    const content = `PASSENGER STATUS
+===============
+WAITING: ${formatPassengers(passengerStates.WAITING)}
+ENQUEUED: ${formatPassengers(passengerStates.ENQUEUED)}
+ONBOARD: ${formatPassengers(passengerStates.ONBOARD)}
+COMPLETED: ${formatPassengers(passengerStates.COMPLETED)}`;
+    statusDiv.textContent = content;
+}
+
+function updatePassengerState(passengerId, newState) {
+    // Remove from all states first
+    Object.values(passengerStates).forEach(set => set.delete(passengerId));
+    // Add to new state
+    passengerStates[newState].add(passengerId);
+    // Update the display immediately
+    updatePassengerStatus();
+}
+
 // use the ID of the run you want to visualize
 // run ID, num trikes, num passengers
-show_real("3-2-20-qrzmaciukogo", 3, 20)
+show_real("3-2-20-rvevatjrflia", 3, 20)
 
-// / 3-1-20-derpniusjjsm
+// /3-2-20-omceyaycyqmn
 

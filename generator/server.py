@@ -40,3 +40,21 @@ def real_simulation(id, trikes_cnt, pass_cnt):
         "trikes": trikes,
         "passengers": passengers
     }
+
+@app.route('/real/<id>/terminals.json')
+def terminals_data(id):
+    """Serve all terminal data."""
+    try:
+        with open(f'data/real/{id}/terminals.json') as f:
+            return json.load(f)
+    except Exception as e:
+        return {"error": str(e)}, 404
+
+@app.route('/real/<id>/roam_endpoints.json')
+def roam_endpoints(id):
+    """Serve roam endpoints data."""
+    try:
+        with open(f'data/real/{id}/roam_endpoints.json') as f:
+            return json.load(f)
+    except Exception as e:
+        return {"error": str(e)}, 404

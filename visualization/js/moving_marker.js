@@ -149,8 +149,10 @@ L.Marker.MovingMarker = L.Marker.extend({
         const isDropoff = message.includes("DROP-OFF");
         const isPassengerAppear = message.includes("APPEAR") && this.id.startsWith("passenger");
         const isTrikeAppear = message.includes("APPEAR") && this.id.startsWith("trike");
-        const isEnqueue = message.includes("ENQUEUE");
-        const isReset = message.includes("RESET");
+        const isEnqueue = message.includes("ENQUEUE") && this.id.startsWith("passenger");
+        const isReset = message.includes("RESET") && this.id.startsWith("passenger");
+
+        console.log(`Creating marker for ${message} - isEnqueue: ${isEnqueue}, isReset: ${isReset}`);
 
         let markerColor;
         if (isPassengerAppear) {
@@ -192,7 +194,14 @@ L.Marker.MovingMarker = L.Marker.extend({
         const eventLog = document.getElementById('eventLog');
         const entry = document.createElement('div');
         entry.className = 'event-log-entry';
-        entry.textContent = `Frame ${time}: ${this.id} ${type} ${data ?? ""}`;
+        
+        // Format the event message
+        let message = `Frame ${time}: ${this.id} ${type}`;
+        if (data) {
+            message += ` ${data}`;
+        }
+        
+        entry.textContent = message;
         eventLog.appendChild(entry);
         eventLog.scrollTop = eventLog.scrollHeight;
     },
@@ -264,17 +273,30 @@ L.Marker.MovingMarker = L.Marker.extend({
                     
                     const message = `${this.id}: ${curEvent.type} ${curEvent.data || ""}`;
                     this.createEventMarker(eventPoint[0], eventPoint[1], message);
-                    this.logEvent(Math.floor((timestamp - this._startTimeStamp) / REFRESH_TIME), curEvent.type, curEvent.data);
-                    console.log(timestamp-this._startTimeStamp, message);
                     
-                    // Update passenger set for tricycles
+                    // Log the event with the actual time from the event object
+                    this.logEvent(curEvent.time, curEvent.type, curEvent.data);
+                    console.log(`Processing ${curEvent.type} event at time ${curEvent.time} for ${this.id}`);
+                    
+                    // Update passenger set for tricycles and passenger states
                     if (this.id.startsWith("trike")) {
                         if (curEvent.type == "DROP-OFF") {
                             this.passengers.delete(curEvent.data);
+                            updatePassengerState(curEvent.data, "COMPLETED");
                         } else if (curEvent.type == "LOAD") {
                             this.passengers.add(curEvent.data);
+                            updatePassengerState(curEvent.data, "ONBOARD");
                         }
                         this.updateTooltip();
+                    } else if (this.id.startsWith("passenger")) {
+                        // Handle passenger-specific events
+                        if (curEvent.type === "ENQUEUE") {
+                            updatePassengerState(this.id, "ENQUEUED");
+                            console.log(`Passenger ${this.id} enqueued by ${curEvent.data}`);
+                        } else if (curEvent.type === "RESET") {
+                            updatePassengerState(this.id, "WAITING");
+                            console.log(`Passenger ${this.id} reset by ${curEvent.data}`);
+                        }
                     }
                     
                     // Update timestamps to maintain position
