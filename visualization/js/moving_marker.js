@@ -286,6 +286,9 @@ L.Marker.MovingMarker = L.Marker.extend({
                         } else if (curEvent.type == "LOAD") {
                             this.passengers.add(curEvent.data);
                             updatePassengerState(curEvent.data, "ONBOARD");
+                        } else if (curEvent.type == "ENQUEUE") {
+                            // Update passenger state when tricycle enqueues a passenger
+                            updatePassengerState(curEvent.data, "ENQUEUED");
                         }
                         this.updateTooltip();
                     } else if (this.id.startsWith("passenger")) {
