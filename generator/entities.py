@@ -5,9 +5,9 @@ from enum import Enum
 MS_PER_FRAME = 1000
 
 # PICKUP / DROPOFF PARAMETERS
-DETECTION_RADIUS_METERS = 100  # Larger radius for detection
-DROPOFF_RADIUS_METERS = 2  # Smaller radius for actual dropoff
-PICKUP_RADIUS_METERS = 2  # Smaller radius for actual pickup
+DETECTION_RADIUS_METERS = 200  # Increased radius for detection
+DROPOFF_RADIUS_METERS = 20  # Increased radius for actual dropoff
+PICKUP_RADIUS_METERS = 20  # Increased radius for actual pickup
 
 class PassengerStatus(Enum):
     WAITING = 0
@@ -178,21 +178,6 @@ class Map:
         return (self.x_min <= point.x <= self.x_max and 
                 self.y_min <= point.y <= self.y_max)
 
-    def checkEnqueuedPassengers(self, current_time: int):
-        """
-        Checks all passengers in the map for enqueue timeouts and resets them if necessary.
-        Timeout is based on the speed of the tricycle that claimed the passenger.
-        """
-        for passenger in self.passengers:
-            if passenger.claimed_by:
-                # Find the tricycle that claimed this passenger
-                for trike in self.tricycles:
-                    if trike.id == passenger.claimed_by:
-                        if passenger.checkEnqueueTimeout(current_time, trike.speed):
-                            print(f"Passenger {passenger.id} enqueue timeout, resetting to WAITING", flush=True)
-                            passenger.onReset(current_time, [passenger.src.x, passenger.src.y])
-                        break
-
     def addTricycle(self, tricycle: 'Tricycle'):
         """
         Adds a tricycle to the map.
@@ -248,7 +233,6 @@ class Passenger(Actor):
         self.status = status
         self.pickupTime = -1  # Time when passenger is picked up
         self.claimed_by = None  # Track which tricycle has claimed this passenger
-        self.enqueueTime = -1  # Time when passenger was enqueued
 
         self.path.append(self.src)
         
@@ -268,7 +252,6 @@ class Passenger(Actor):
         """
         self.status = PassengerStatus.ENQUEUED
         self.claimed_by = trike_id
-        self.enqueueTime = time  # Record when passenger was enqueued
         # Record the ENQUEUE event
         self.events.append({
             "type": "ENQUEUE",
@@ -323,29 +306,6 @@ class Passenger(Actor):
             "time": time,
             "location": location
         })
-
-    def checkEnqueueTimeout(self, current_time: int, trike_speed: float):
-        """
-        Checks if the passenger has been enqueued for too long without being picked up.
-        Timeout is based on how long it would take a tricycle to travel twice the detection radius
-        at its current speed, with a minimum timeout of 60 seconds.
-        
-        Args:
-            current_time: Current simulation time in frames
-            trike_speed: Speed of the tricycle that claimed this passenger
-            
-        Returns:
-            bool: True if the passenger should be reset
-        """
-        if self.status == PassengerStatus.ENQUEUED and self.enqueueTime != -1:
-            # Calculate timeout based on time to travel 2x detection radius
-            # Add minimum timeout of 60 seconds to prevent too frequent resets
-            timeout_frames = max(
-                (DETECTION_RADIUS_METERS * 2) / (trike_speed * MS_PER_FRAME),
-                60  # Minimum 60 second timeout
-            )
-            return (current_time - self.enqueueTime) > timeout_frames
-        return False
 
     ########## Serialization Methods ##########
 
@@ -419,7 +379,7 @@ class Tricycle(Actor):
         self.x = startX
         self.y = startY
         self.passengers = []
-        self.enqueued_passengers = set()  # Track enqueued passengers
+        self.enqueuedPassenger = None  # Track single enqueued passenger
         self.status = TricycleStatus.ROAMING if isRoaming else TricycleStatus.IDLE
 
         # initialize metrics
@@ -476,9 +436,11 @@ class Tricycle(Actor):
         
         # move to next position
         if not self.to_go:
+            print(f"Tricycle {self.id} has no points in to_go queue", flush=True)
             return 0
         
         nxt = self.to_go[0]
+        print(f"Tricycle {self.id} attempting to move from {cur.toTuple()} to {nxt.toTuple()}", flush=True)
 
         if self.useMeters:
             distRequiredM = util.haversine(*cur.toTuple(), *nxt.toTuple())
@@ -492,6 +454,7 @@ class Tricycle(Actor):
             distTravelledM = 0 if distRequired == 0 else distRequiredM * (distTravelled/distRequired)
 
         if distRequired == 0:
+            print(f"Tricycle {self.id} reached point {nxt.toTuple()}, removing from to_go", flush=True)
             del self.to_go[0]
             return 0
 
@@ -517,6 +480,7 @@ class Tricycle(Actor):
             })
 
         if progress >= 1:
+            print(f"Tricycle {self.id} completed move to {nxt.toTuple()}, removing from to_go", flush=True)
             del self.to_go[0]
 
         return 1 if self.useMeters else MS_PER_FRAME
@@ -541,33 +505,103 @@ class Tricycle(Actor):
             - Validates path length and duplicates
             - Uses OSRM for route finding
             - Handles path priority based on context
+            - Ensures path continuity when adding new paths
         """
         try:
+            print(f"Tricycle {self.id} finding path from {self.path[-1].toTuple()} to {new_destination.toTuple()} with priority {priority}", flush=True)
+            
+            # If we're already at the destination, no need to find a path
+            if self.map.isAtLocation(self.path[-1], new_destination):
+                print(f"Tricycle {self.id} already at destination {new_destination.toTuple()}", flush=True)
+                return True
+                
             # Find path to destination
             path = util.find_path_between_points_in_osrm(
                 self.path[-1].toTuple(), 
                 new_destination.toTuple()
-            ) + [new_destination.toTuple()]
+            )
             
             # Validate path
-            if len(path) < 3:
-                print(f"Path too short from {self.path[-1].toTuple()} to {new_destination.toTuple()}, skipping", flush=True)
+            if not path:
+                print(f"No path found from {self.path[-1].toTuple()} to {new_destination.toTuple()}", flush=True)
                 return False
+                
+            if len(path) < 2:
+                print(f"Path too short from {self.path[-1].toTuple()} to {new_destination.toTuple()}, got {len(path)} points", flush=True)
+                return False
+            
+            print(f"Tricycle {self.id} found path with {len(path)} points", flush=True)
             
             # Check for duplicate destinations
             if self.to_go and self.to_go[-1].toTuple() == new_destination.toTuple():
                 print(f"Already en route to {new_destination.toTuple()}", flush=True)
                 return True
             
-            # Convert to Points and update path based on priority
-            new_points = [Point(*p) for p in path[1:]]
+            # Convert to Points
+            new_points = [Point(*p) for p in path]
             
             if priority == 'replace':
+                # When replacing path, clear current path and add new one
+                print(f"Tricycle {self.id} replacing path with {len(new_points)} points", flush=True)
                 self.to_go = new_points
             elif priority == 'front':
-                self.to_go = new_points + self.to_go
+                # When adding to front, we need to ensure the paths connect
+                if self.to_go:
+                    # First find path from current position to new destination
+                    print(f"Tricycle {self.id} finding path from current position {self.path[-1].toTuple()} to {new_destination.toTuple()}", flush=True)
+                    path_to_dest = util.find_path_between_points_in_osrm(
+                        self.path[-1].toTuple(),
+                        new_destination.toTuple()
+                    )
+                    if len(path_to_dest) >= 2:
+                        # Then find path from new destination to first point in current path
+                        print(f"Tricycle {self.id} finding connecting path from {new_destination.toTuple()} to {self.to_go[0].toTuple()}", flush=True)
+                        connecting_path = util.find_path_between_points_in_osrm(
+                            new_destination.toTuple(),
+                            self.to_go[0].toTuple()
+                        )
+                        if len(connecting_path) >= 2:
+                            # Add new path + connecting path + rest of current path
+                            path_to_dest_points = [Point(*p) for p in path_to_dest]
+                            connecting_points = [Point(*p) for p in connecting_path]
+                            
+                            # Remove any duplicate points at the start
+                            if path_to_dest_points and self.path[-1].toTuple() == path_to_dest_points[0].toTuple():
+                                path_to_dest_points = path_to_dest_points[1:]
+                            
+                            self.to_go = path_to_dest_points + connecting_points + self.to_go[1:]
+                            print(f"Tricycle {self.id} added {len(path_to_dest_points)} points to front with {len(connecting_points)} connecting points", flush=True)
+                        else:
+                            print(f"Could not find connecting path from {new_destination.toTuple()} to {self.to_go[0].toTuple()}", flush=True)
+                            return False
+                    else:
+                        print(f"Could not find path from current position to {new_destination.toTuple()}", flush=True)
+                        return False
+                else:
+                    # If no current path, just add new path
+                    print(f"Tricycle {self.id} adding {len(new_points)} points to empty path", flush=True)
+                    self.to_go = new_points
             else:  # append
-                self.to_go += new_points
+                # When appending, we need to ensure the paths connect
+                if self.to_go:
+                    # Find path from last point in current path to new destination
+                    print(f"Tricycle {self.id} finding connecting path from {self.to_go[-1].toTuple()} to {new_destination.toTuple()}", flush=True)
+                    connecting_path = util.find_path_between_points_in_osrm(
+                        self.to_go[-1].toTuple(),
+                        new_destination.toTuple()
+                    )
+                    if len(connecting_path) >= 2:
+                        # Add connecting path to new destination
+                        connecting_points = [Point(*p) for p in connecting_path]
+                        self.to_go = self.to_go[:-1] + connecting_points
+                        print(f"Tricycle {self.id} added {len(connecting_points)} connecting points to path", flush=True)
+                    else:
+                        print(f"Could not find connecting path from {self.to_go[-1].toTuple()} to {new_destination.toTuple()}", flush=True)
+                        return False
+                else:
+                    # If no current path, just add new path
+                    print(f"Tricycle {self.id} adding {len(new_points)} points to empty path", flush=True)
+                    self.to_go = new_points
             
             return True
             
@@ -599,51 +633,56 @@ class Tricycle(Actor):
         """Returns True if the tricycle has any passengers."""
         return len(self.passengers) > 0
 
-    def enqueueNearbyPassengers(self, current_time: int):
+    def enqueueNearbyPassenger(self, current_time: int):
         """
-        Detects and claims nearby waiting passengers.
+        Enqueues the closest nearby waiting passenger.
         
         Args:
             current_time: Current simulation time
             
         Returns:
-            list[Passenger]: List of newly enqueued passengers
+            Passenger | None: The enqueued passenger if one was found and enqueued, None otherwise
             
         Note:
             - Only considers WAITING passengers
-            - Only enqueues as many passengers as the tricycle can load
-            - Adds pickup points to front of path
-            - Prevents multiple tricycles from claiming the same passenger
+            - Only enqueues one passenger at a time (closest one)
+            - Adds pickup point to front of path
         """
         if not self.map:
             raise Exception("Not backward compatible. Please use a map")
         
+        # If we already have an enqueued passenger, don't try to enqueue another one
+        if self.enqueuedPassenger is not None:
+            print(f"Tricycle {self.id} already has enqueued passenger {self.enqueuedPassenger}", flush=True)
+            return None
+        
         cur = self.path[-1]
         
         # Calculate how many more passengers we can take (considering both loaded and enqueued)
-        remaining_capacity = self.capacity - (len(self.passengers) + len(self.enqueued_passengers))
+        remaining_capacity = self.capacity - (len(self.passengers) + 1)
         if remaining_capacity <= 0:
-            return []
+            return None
         
         # Get nearby passengers using the new Map method
         nearby_passengers = self.map.getNearbyPassengers(cur, DETECTION_RADIUS_METERS)
         
-        enqueued_passengers = []
+        # Sort passengers by distance
+        passenger_distances = []
         for p in nearby_passengers:
-            # Stop if we've reached capacity
-            if len(enqueued_passengers) >= remaining_capacity:
-                break
-                
-            # Only consider waiting passengers that aren't claimed by other tricycles
-            if p.status != PassengerStatus.WAITING:
-                continue
-            if p.claimed_by is not None and p.claimed_by != self.id:
-                continue
-                
+            if p.status == PassengerStatus.WAITING:
+                distance = util.haversine(*cur.toTuple(), *p.src.toTuple())
+                passenger_distances.append((distance, p))
+        
+        # Sort by distance
+        passenger_distances.sort(key=lambda x: x[0])
+        
+        # Only take the closest passenger
+        if passenger_distances:
+            distance, p = passenger_distances[0]
+            
             # Update passenger status to ENQUEUED and claim them
             p.onEnqueue(self.id, current_time, [p.src.x, p.src.y])
-            enqueued_passengers.append(p)
-            self.enqueued_passengers.add(p.id)  # Track enqueued passenger
+            self.enqueuedPassenger = p.id  # Track enqueued passenger
             self.events.append({
                 "type": "ENQUEUE",
                 "data": p.id,
@@ -655,8 +694,14 @@ class Tricycle(Actor):
             if not any(point.x == p.src.x and point.y == p.src.y for point in self.to_go):
                 if not self.updatePath(p.src, priority='front'):
                     print(f"Failed to add pickup point for {p.id}", flush=True)
+                    # If we failed to add the pickup point, reset the passenger
+                    p.onReset(current_time, [p.src.x, p.src.y])
+                    self.enqueuedPassenger = None
+                else:
+                    print(f"Enqueued passenger {p.id} at distance {distance:.2f}m", flush=True)
+                    return p
         
-        return enqueued_passengers
+        return None
 
     def loadPassenger(self, p: Passenger, current_time: int):
         """
@@ -691,7 +736,7 @@ class Tricycle(Actor):
         })
 
         self.passengers.append(p)
-        self.enqueued_passengers.discard(p.id)  # Remove from enqueued set
+        self.enqueuedPassenger = None  # Clear enqueued passenger
         p.onLoad(self.id, current_time, [self.path[-1].x, self.path[-1].y])
         
         # Only set status to SERVING if not already serving
@@ -726,25 +771,52 @@ class Tricycle(Actor):
         loaded = []
         for p in nearby_passengers:
             # Only consider ENQUEUED passengers claimed by this tricycle
-            if p.status != PassengerStatus.ENQUEUED or p.claimed_by != self.id:
+            if p.status != PassengerStatus.ENQUEUED:
+                print(f"Passenger {p.id} not in ENQUEUED status (current: {p.status})", flush=True)
+                continue
+            if p.claimed_by != self.id:
+                print(f"Passenger {p.id} claimed by {p.claimed_by}, not {self.id}", flush=True)
                 continue
                 
-            if self.loadPassenger(p, current_time):
-                loaded.append(p)
-                self.map.removePassenger(p)
-                print(f"Loaded {p.id} into {self.id}", flush=True)
+            # Calculate distance to passenger
+            distance = util.haversine(*cur.toTuple(), *p.src.toTuple())
+            print(f"Tricycle {self.id} is {distance:.2f}m away from passenger {p.id}", flush=True)
                 
-                # After loading a passenger, schedule their destination
-                try:
-                    if self.scheduleNextPassenger():
-                        print(f"Scheduled destination for {p.id}", flush=True)
-                except NoMorePassengers:
-                    print(f"No more passengers to schedule for {self.id}", flush=True)
+            if distance <= PICKUP_RADIUS_METERS:
+                if len(self.passengers) >= self.capacity:
+                    print(f"Tricycle {self.id} at capacity ({len(self.passengers)}/{self.capacity})", flush=True)
+                    # If we can't load the passenger (e.g., capacity reached),
+                    # reset their status back to WAITING and clear claim
+                    print(f"Could not load {p.id} into {self.id}, resetting status to WAITING", flush=True)
+                    p.onReset(current_time, [p.src.x, p.src.y])
+                    continue
+
+                if self.loadPassenger(p, current_time):
+                    loaded.append(p)
+                    self.map.removePassenger(p)
+                    print(f"Loaded {p.id} into {self.id} at distance {distance:.2f}m", flush=True)
+                    
+                    # Add a small wait after loading to ensure stability
+                    self.events.append({
+                        "type": "WAIT",
+                        "data": 200,  # 200ms wait
+                        "time": current_time,
+                        "location": [self.path[-1].x, self.path[-1].y]
+                    })
+                    
+                    # After loading a passenger, schedule their destination
+                    try:
+                        if self.scheduleNextPassenger():
+                            print(f"Scheduled destination for {p.id}", flush=True)
+                    except NoMorePassengers:
+                        print(f"No more passengers to schedule for {self.id}", flush=True)
+                else:
+                    # If we can't load the passenger (e.g., capacity reached),
+                    # reset their status back to WAITING and clear claim
+                    print(f"Could not load {p.id} into {self.id}, resetting status to WAITING", flush=True)
+                    p.onReset(current_time, [p.src.x, p.src.y])
             else:
-                # If we can't load the passenger (e.g., capacity reached),
-                # reset their status back to WAITING and clear claim
-                print(f"Could not load {p.id} into {self.id}, resetting status to WAITING", flush=True)
-                p.onReset(current_time, [p.src.x, p.src.y])
+                print(f"Passenger {p.id} is too far ({distance:.2f}m) for pickup by {self.id}", flush=True)
         
         return loaded
 
@@ -755,8 +827,8 @@ class Tricycle(Actor):
         Args:
             current_time: Current simulation time
             
-        Yields:
-            Passenger: Each passenger that was successfully dropped off
+        Returns:
+            list[Passenger]: List of passengers that were successfully dropped off
             
         Note:
             - Uses haversine distance for realistic dropoff
@@ -767,14 +839,16 @@ class Tricycle(Actor):
             raise Exception("Not backward compatible. Please use a map")
         
         cur = self.path[-1]
-        dropped = False
+        dropped = []
+        dropped_any = False
 
         # Check if any passengers destinations are within DROPOFF_RADIUS_METERS
         for index, p in enumerate(self.passengers[:]):
             # Calculate distance using haversine (in meters)
             distance = util.haversine(*cur.toTuple(), *p.dest.toTuple())
+            print(f"Tricycle {self.id} is {distance:.2f}m away from {p.id}'s destination at {p.dest.toTuple()}", flush=True)
             if distance <= DROPOFF_RADIUS_METERS:
-                dropped = True
+                dropped_any = True
                 self.events.append({
                     "type": "DROP-OFF",
                     "data": p.id, 
@@ -783,26 +857,39 @@ class Tricycle(Actor):
                 })
                 self.passengers = list(filter(lambda x : x.id != p.id, self.passengers))
                 p.onDropoff(current_time, [cur.x, cur.y])
-                print("dropped", p.id, "at distance", distance, "meters", flush=True)
-                yield p
+                dropped.append(p)
+                print(f"Dropped {p.id} at distance {distance:.2f}m", flush=True)
+            else:
+                print(f"Tricycle {self.id} is too far ({distance:.2f}m) from {p.id}'s destination to drop off", flush=True)
         
         # If all passengers are dropped off, update status
         if not self.passengers:
             if self.isRoaming:
                 if self.status != TricycleStatus.ROAMING:  # Only set if not already in ROAMING
+                    print(f"Tricycle {self.id} transitioning to ROAMING status after dropping off all passengers", flush=True)
                     self.setStatus(TricycleStatus.ROAMING)
             elif self.status != TricycleStatus.RETURNING_TO_TERMINAL:  # Only set if not already returning
+                print(f"Tricycle {self.id} transitioning to RETURNING_TO_TERMINAL status after dropping off all passengers", flush=True)
                 self.setStatus(TricycleStatus.RETURNING_TO_TERMINAL)
-                print(f"Tricycle {self.id} is returning to terminal after dropping off all passengers", flush=True)
         
         # Add a small wait after dropping off passengers to prevent erratic movement
-        if dropped:
+        if dropped_any:
             self.events.append({
                 "type": "WAIT",
                 "data": 100,  # Reduced wait time to 100ms
                 "time": current_time,
                 "location": [self.path[-1].x, self.path[-1].y]
             })
+            
+            # Schedule next passenger if we still have passengers
+            if self.passengers:
+                try:
+                    if self.scheduleNextPassenger():
+                        print(f"Scheduled next passenger after dropoff for {self.id}", flush=True)
+                except NoMorePassengers:
+                    print(f"No more passengers to schedule for {self.id}", flush=True)
+        
+        return dropped
 
     def scheduleNextPassenger(self):
         """
@@ -813,11 +900,9 @@ class Tricycle(Actor):
             
         Note:
             - Uses scheduler if available
-            - Replaces current path with path to destination
+            - Adds path to front of queue (for passenger destinations)
             - Maintains passenger queue for potential new pickups
         """
-        if len(self.passengers) == 0:
-            raise NoMorePassengers
         
         # If no scheduler, just offload the first passenger
         if self.scheduler is None:
@@ -829,9 +914,13 @@ class Tricycle(Actor):
         # Get the path to the passenger's destination
         src_point = self.path[-1]
         dst_point = p.dest
+        print(f"Tricycle {self.id} attempting to schedule path to {p.id}'s destination at {dst_point.toTuple()}", flush=True)
         try:
-            if not self.updatePath(p.dest, priority='replace'):
+            # Use 'front' priority instead of 'replace' to maintain path continuity
+            if not self.updatePath(p.dest, priority='front'):
+                print(f"Failed to update path for {p.id} to {dst_point.toTuple()}", flush=True)
                 return None
+            print(f"Successfully scheduled path for {p.id} to {dst_point.toTuple()}", flush=True)
             return p
         
         except util.NoRoute:

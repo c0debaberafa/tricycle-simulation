@@ -332,18 +332,18 @@ class Simulator:
             in_terminal = None
             if random.random() < self.roadPassengerChance:
                 # Generate road passenger on the road
-                passenger_source = random.choice(hotspots)
+                # passenger_source = random.choice(hotspots)
                 while True:
                     try:
+                        passenger_source = gen_random_valid_point()
                         if self.useFixedHotspots:
                             passenger_dest = random.choice(validFixedHotspots)
                         else:
                             passenger_dest = gen_random_valid_point()
                         find_path_between_points_in_osrm(passenger_source.toTuple(), passenger_dest.toTuple())
+                        break
                     except Exception:
                         continue
-                    finally:
-                        break
 
                 passenger = entities.Passenger(
                     id=f'passenger_{passenger_id}',
@@ -417,9 +417,9 @@ class Simulator:
                     continue
                 # Only roaming tricycles should look for passengers on the road
                 if trike.isRoaming:
-                    detected = trike.enqueueNearbyPassengers(cur_time[0])
-                    if detected:
-                        print(f"----Detected {len(detected)} nearby passengers for {trike.id}", flush=True)
+                    p = trike.enqueueNearbyPassenger(cur_time[0])
+                    if p:
+                        print(f"----Detected passenger {p.id} for {trike.id}", flush=True)
             
             # 2. Handle offloading/loading
             for trike in tricycles:
@@ -516,9 +516,6 @@ class Simulator:
                     for passenger in loadingResult["passengers"]:
                         process_passenger(passenger, loadingResult["tricycle"])
                     terminal.popTricycle()
-            
-            # Check for enqueued passengers that have timed out
-            map.checkEnqueuedPassengers(cur_time[0])
             
             # update the time
             cur_time[0] += 1 if self.isRealistic else entities.MS_PER_FRAME

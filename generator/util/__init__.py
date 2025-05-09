@@ -32,8 +32,6 @@ def find_path_between_points_in_osrm(p1, p2):
     Note: It may be possible that there exists no such path. In this case, a NoRoute exception is 
     raised.
 
-    Warning: I forgot is p2 is included in the return value. I think it is NOT included.
-
     Parameters:
     p1 and p2 - (x ,y) tuples describing the coordinates
 
@@ -43,6 +41,11 @@ def find_path_between_points_in_osrm(p1, p2):
     
     x1, y1 = p1
     x2, y2 = p2
+    
+    # First find the nearest points on the road network
+    x1, y1 = find_nearest_point_in_osrm_path(x1, y1)
+    x2, y2 = find_nearest_point_in_osrm_path(x2, y2)
+    
     response = requests.get(f'{OSRM_URL}/route/v1/driving/{x1},{y1};{x2},{y2}')
     data = response.json()
     
