@@ -32,6 +32,13 @@ function roundPlaces(x, places) {
 const REFRESH_TIME = 16.67;  // 60 FPS for smoother animation
 let GLOBAL_TIME_MS = 0;
 
+// Global Maps for storing different types of markers
+window.appearMarkers = new Map();  // Store passenger appear markers
+window.loadMarkers = new Map();    // Store load markers
+window.dropoffMarkers = new Map(); // Store dropoff markers
+window.enqueueLines = new Map();   // Store lines connecting trikes to enqueued passengers
+// Format: Map<passengerId, {trikeId: string, line: L.Polyline}>
+
 function update_time() {
     GLOBAL_TIME_MS += REFRESH_TIME;
     setTimeout(update_time, REFRESH_TIME);
@@ -186,6 +193,32 @@ L.Marker.MovingMarker = L.Marker.extend({
         });
         
         this.eventMarkers.push(marker);
+
+        // Store markers in appropriate global Maps
+        if (isPassengerAppear) {
+            const passengerId = this.id;
+            console.log(`Storing appear marker for ${passengerId}`);
+            window.appearMarkers.set(passengerId, marker);
+        } else if (isLoad) {
+            const match = message.match(/passenger_\d+/);
+            if (match) {
+                const passengerId = match[0];
+                console.log(`Storing load marker for ${passengerId}`);
+                window.loadMarkers.set(passengerId, marker);
+            } else {
+                console.warn(`Could not extract passenger ID from message: ${message}`);
+            }
+        } else if (isDropoff) {
+            const match = message.match(/passenger_\d+/);
+            if (match) {
+                const passengerId = match[0];
+                console.log(`Storing dropoff marker for ${passengerId}`);
+                window.dropoffMarkers.set(passengerId, marker);
+            } else {
+                console.warn(`Could not extract passenger ID from message: ${message}`);
+            }
+        }
+
         return marker;
     },
 
@@ -256,6 +289,11 @@ L.Marker.MovingMarker = L.Marker.extend({
             
                     this.setLatLng(new_position);
 
+                    // Update enqueue lines if this is a trike
+                    if (this.id.startsWith("trike")) {
+                        this.updateEnqueueLines();
+                    }
+
                     if (Math.round(segmentProgress*100) == 100) {
                         this._prevTimeStamp = timestamp;
                         this._currentPathIndex += 1;
@@ -283,12 +321,57 @@ L.Marker.MovingMarker = L.Marker.extend({
                         if (curEvent.type == "DROP-OFF") {
                             this.passengers.delete(curEvent.data);
                             updatePassengerState(curEvent.data, "COMPLETED");
+                            // Remove the load marker for this passenger
+                            console.log(`Attempting to remove load marker for ${curEvent.data}`);
+                            console.log('Current load markers:', Array.from(window.loadMarkers.keys()));
+                            const loadMarker = window.loadMarkers.get(curEvent.data);
+                            if (loadMarker) {
+                                console.log(`Found load marker for ${curEvent.data}, removing...`);
+                                loadMarker.remove();
+                                window.loadMarkers.delete(curEvent.data);
+                            } else {
+                                console.warn(`No load marker found for ${curEvent.data}`);
+                            }
                         } else if (curEvent.type == "LOAD") {
                             this.passengers.add(curEvent.data);
                             updatePassengerState(curEvent.data, "ONBOARD");
+                            // Remove the appear marker for this passenger
+                            console.log(`Attempting to remove appear marker for ${curEvent.data}`);
+                            console.log('Current appear markers:', Array.from(window.appearMarkers.keys()));
+                            const appearMarker = window.appearMarkers.get(curEvent.data);
+                            if (appearMarker) {
+                                console.log(`Found appear marker for ${curEvent.data}, removing...`);
+                                appearMarker.remove();
+                                window.appearMarkers.delete(curEvent.data);
+                            } else {
+                                console.warn(`No appear marker found for ${curEvent.data}`);
+                            }
+                            // Remove the enqueue line
+                            const lineData = window.enqueueLines.get(curEvent.data);
+                            if (lineData && lineData.trikeId === this.id) {
+                                lineData.line.remove();
+                                window.enqueueLines.delete(curEvent.data);
+                            }
                         } else if (curEvent.type == "ENQUEUE") {
                             // Update passenger state when tricycle enqueues a passenger
                             updatePassengerState(curEvent.data, "ENQUEUED");
+                            // Create a line connecting the trike to the passenger
+                            const passengerMarker = window.appearMarkers.get(curEvent.data);
+                            if (passengerMarker) {
+                                const line = L.polyline([
+                                    this.getLatLng(),
+                                    passengerMarker.getLatLng()
+                                ], {
+                                    color: 'red',
+                                    weight: 2,
+                                    opacity: 1,
+                                    dashArray: '5, 10'
+                                }).addTo(map);
+                                window.enqueueLines.set(curEvent.data, {
+                                    trikeId: this.id,
+                                    line: line
+                                });
+                            }
                         }
                         this.updateTooltip();
                     } else if (this.id.startsWith("passenger")) {
@@ -371,11 +454,38 @@ L.Marker.MovingMarker = L.Marker.extend({
         this.setLatLng(new_position);
     },
 
-    // Add cleanup method
+    // Add method to update enqueue lines
+    updateEnqueueLines: function() {
+        // Update all enqueue lines for this trike
+        window.enqueueLines.forEach((lineData, passengerId) => {
+            if (lineData.trikeId === this.id) {
+                const passengerMarker = window.appearMarkers.get(passengerId);
+                if (passengerMarker) {
+                    lineData.line.setLatLngs([
+                        this.getLatLng(),
+                        passengerMarker.getLatLng()
+                    ]);
+                }
+            }
+        });
+    },
+
+    // Update remove method to clean up lines
     remove: function() {
         // Remove all event markers
         this.eventMarkers.forEach(marker => marker.remove());
         this.eventMarkers = [];
+        
+        // Remove all enqueue lines for this trike
+        if (this.id.startsWith("trike")) {
+            window.enqueueLines.forEach((lineData, passengerId) => {
+                if (lineData.trikeId === this.id) {
+                    lineData.line.remove();
+                    window.enqueueLines.delete(passengerId);
+                }
+            });
+        }
+        
         // Call parent remove
         L.Marker.prototype.remove.call(this);
     }
