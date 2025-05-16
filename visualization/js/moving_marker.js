@@ -30,7 +30,8 @@ function roundPlaces(x, places) {
 }
 
 const REFRESH_TIME = 16.67;  // 60 FPS for smoother animation
-let GLOBAL_TIME_MS = 0;
+// Make GLOBAL_TIME_MS available globally
+window.GLOBAL_TIME_MS = window.GLOBAL_TIME_MS || 0;
 
 // Global Maps for storing different types of markers
 window.appearMarkers = new Map();  // Store passenger appear markers
@@ -40,11 +41,12 @@ window.enqueueLines = new Map();   // Store lines connecting trikes to enqueued 
 // Format: Map<passengerId, {trikeId: string, line: L.Polyline}>
 
 function update_time() {
-    GLOBAL_TIME_MS += REFRESH_TIME;
+    window.GLOBAL_TIME_MS += REFRESH_TIME;
     setTimeout(update_time, REFRESH_TIME);
 }
 
-update_time()
+// Start the time update loop
+update_time();
 
 L.Marker.MovingMarker = L.Marker.extend({
 
@@ -56,6 +58,7 @@ L.Marker.MovingMarker = L.Marker.extend({
     },
 
     initialize: function (id, path, stime, dtime, speed, events) {
+        console.log(`Initializing marker ${id} with path:`, path);
         this.id = id;
         this.SPEED = speed;
         this.path = path;
@@ -67,15 +70,28 @@ L.Marker.MovingMarker = L.Marker.extend({
 
         // Only create and add the base marker for tricycles
         if (!this.id.startsWith("passenger")) {
+            // Create a hollow circle marker for tricycles
+            const markerIcon = L.divIcon({
+                className: 'trike-marker',
+                html: `<div style="
+                    width: 12px;
+                    height: 12px;
+                    border-radius: 50%;
+                    border: 4px solid #0000FF;
+                    background-color: transparent;
+                "></div>`
+            });
+
             if (this.events == null) {
-                L.Marker.prototype.initialize.call(this, path[0]);
+                console.log(`Creating base marker for ${this.id} at path[0]:`, path[0]);
+                L.Marker.prototype.initialize.call(this, path[0], { icon: markerIcon });
                 this.setLatLng(path[0]);
-                console.log(this.id, "setting to", path[0]);
             } else {
-                L.Marker.prototype.initialize.call(this, [0,0]);
+                console.log(`Creating base marker for ${this.id} at [0,0]`);
+                L.Marker.prototype.initialize.call(this, [0,0], { icon: markerIcon });
                 this.setLatLng([0,0]);
-                console.log(this.id, "setting to", [0,0]);
             }
+            console.log(`Adding marker ${this.id} to map`);
             this.addTo(map);
 
             // add the tooltip with initial passenger state
@@ -145,6 +161,11 @@ L.Marker.MovingMarker = L.Marker.extend({
 
     // Add new method to create event markers
     createEventMarker: function(lat, lng, message) {
+        // Skip creating markers for enqueue events and trike appear events
+        if (message.includes("ENQUEUE") || (message.includes("APPEAR") && this.id.startsWith("trike"))) {
+            return null;
+        }
+
         const key = `${lat.toFixed(6)},${lng.toFixed(6)}`;
         if (!window.tooltipStackCounter) window.tooltipStackCounter = {};
         if (!window.tooltipStackCounter[key]) window.tooltipStackCounter[key] = 0;
@@ -171,7 +192,7 @@ L.Marker.MovingMarker = L.Marker.extend({
         } else if (isReset) {
             markerColor = 'red';
         } else if (isLoad) {
-            markerColor = 'yellow';
+            markerColor = 'orange';
         } else if (isDropoff) {
             markerColor = 'green';
         } else {
@@ -181,7 +202,9 @@ L.Marker.MovingMarker = L.Marker.extend({
         const marker = L.marker([lat, lng], {
             icon: L.divIcon({
                 className: 'event-marker',
-                html: `<div style="background-color: ${markerColor}; width: 8px; height: 8px; border-radius: 50%;"></div>`
+                html: `<div style="background-color: ${markerColor}; width: 8px; height: 8px; border-radius: 50%;"></div>`,
+                iconSize: [8, 8],
+                iconAnchor: [4, 4]  // Center the icon
             })
         })
         .addTo(map)
@@ -248,7 +271,89 @@ L.Marker.MovingMarker = L.Marker.extend({
             return numA - numB;
         }).join(' ');
         this.unbindTooltip();
-        this.bindTooltip(`${this.id}: ${passengerList}`).openTooltip();
+        this.bindTooltip(`${this.id}: ${passengerList}`, {
+            permanent: false,
+            direction: 'top'
+        });
+    },
+
+    // Add method to update marker color based on status
+    updateMarkerColor: function(status) {
+        if (this.id.startsWith("passenger")) return; // Only update tricycle markers
+
+        let color;
+        switch(status) {
+            case 0: // IDLE
+            case 3: // ROAMING
+            case 4: // RETURNING
+            case 2: // TERMINAL
+                color = 'blue'; // Blue
+                break;
+            case 1: // SERVING
+                color = 'orange'; // Orange
+                break;
+            case 5: // ENQUEUING
+                color = 'red'; // Red
+                break;
+            default:
+                color = 'blue'; // Default to blue
+        }
+
+        const markerIcon = L.divIcon({
+            className: 'trike-marker',
+            html: `<div style="
+                width: 12px;
+                height: 12px;
+                border-radius: 50%;
+                border: 4px solid ${color};
+                background-color: transparent;
+            "></div>`
+        });
+
+        this.setIcon(markerIcon);
+    },
+
+    // Add method to create roam path visualization
+    createRoamPath: function(path) {
+        // Remove any existing roam path for this trike
+        if (this.roamPath) {
+            this.roamPath.line.remove();
+            this.roamPath.startMarker.remove();
+            this.roamPath.endMarker.remove();
+        }
+
+        // Create start and end markers
+        const startMarker = L.marker(path[0], {
+            icon: L.divIcon({
+                className: 'roam-endpoint-marker',
+                html: `<div style="background-color: blue; width: 8px; height: 8px;"></div>`,
+                iconSize: [8, 8],
+                iconAnchor: [4, 4]
+            })
+        }).addTo(map);
+
+        const endMarker = L.marker(path[path.length - 1], {
+            icon: L.divIcon({
+                className: 'roam-endpoint-marker',
+                html: `<div style="background-color: blue; width: 8px; height: 8px;"></div>`,
+                iconSize: [8, 8],
+                iconAnchor: [4, 4]
+            })
+        }).addTo(map);
+
+        // Create the path line
+        const line = L.polyline(path, {
+            color: 'blue',
+            weight: 2,
+            opacity: 0.25
+        }).addTo(map);
+
+        // Store the roam path elements
+        this.roamPath = {
+            line: line,
+            startMarker: startMarker,
+            endMarker: endMarker
+        };
     },
 
     _animate: function(_timestamp, noRequestAnim) {
@@ -301,88 +406,119 @@ L.Marker.MovingMarker = L.Marker.extend({
 
                         if (curEvent.data == 0) {
                             this._currentEventIndex += 1;
+                            // If this was a roam path, create the visualization
+                            if (curEvent.isRoam && this._currentPathIndex > 0) {
+                                const startIdx = Math.max(0, this._currentPathIndex - curEvent.pathLength);
+                                const endIdx = Math.min(this.path.length - 1, this._currentPathIndex);
+                                if (startIdx < endIdx) {
+                                    const roamPath = this.path.slice(startIdx, endIdx + 1);
+                                    if (roamPath.length >= 2) {
+                                        this.createRoamPath(roamPath);
+                                    }
+                                }
+                            }
                         }
                     }
                 } else if (curEvent.type == "DROP-OFF" || curEvent.type == "LOAD" || 
                           curEvent.type == "ENQUEUE" || curEvent.type == "RESET") {
                     // Store current position and ensure it's maintained
                     const eventPoint = this.path[this._currentPathIndex];
-                    this.setLatLng(eventPoint);
-                    
-                    const message = `${this.id}: ${curEvent.type} ${curEvent.data || ""}`;
-                    this.createEventMarker(eventPoint[0], eventPoint[1], message);
-                    
-                    // Log the event with the actual time from the event object
-                    this.logEvent(curEvent.time, curEvent.type, curEvent.data);
-                    console.log(`Processing ${curEvent.type} event at time ${curEvent.time} for ${this.id}`);
-                    
-                    // Update passenger set for tricycles and passenger states
-                    if (this.id.startsWith("trike")) {
-                        if (curEvent.type == "DROP-OFF") {
-                            this.passengers.delete(curEvent.data);
-                            updatePassengerState(curEvent.data, "COMPLETED");
-                            // Remove the load marker for this passenger
-                            console.log(`Attempting to remove load marker for ${curEvent.data}`);
-                            console.log('Current load markers:', Array.from(window.loadMarkers.keys()));
-                            const loadMarker = window.loadMarkers.get(curEvent.data);
-                            if (loadMarker) {
-                                console.log(`Found load marker for ${curEvent.data}, removing...`);
-                                loadMarker.remove();
-                                window.loadMarkers.delete(curEvent.data);
-                            } else {
-                                console.warn(`No load marker found for ${curEvent.data}`);
+                    if (eventPoint && Array.isArray(eventPoint) && eventPoint.length === 2) {
+                        // Ensure we're at the exact event location
+                        this.setLatLng(eventPoint);
+                        
+                        const message = `${this.id}: ${curEvent.type} ${curEvent.data || ""}`;
+                        const eventMarker = this.createEventMarker(eventPoint[0], eventPoint[1], message);
+                        
+                        // Log the event with the actual time from the event object
+                        this.logEvent(curEvent.time, curEvent.type, curEvent.data);
+                        console.log(`Processing ${curEvent.type} event at time ${curEvent.time} for ${this.id}`);
+                        
+                        // Update passenger set for tricycles and passenger states
+                        if (this.id.startsWith("trike")) {
+                            if (curEvent.type == "DROP-OFF") {
+                                this.passengers.delete(curEvent.data);
+                                updatePassengerState(curEvent.data, "COMPLETED");
+                                // Update marker color based on new status
+                                this.updateMarkerColor(4); // RETURNING
+                                // Remove the load marker for this passenger with a small delay
+                                const loadMarker = window.loadMarkers.get(curEvent.data);
+                                if (loadMarker) {
+                                    setTimeout(() => {
+                                        loadMarker.remove();
+                                        window.loadMarkers.delete(curEvent.data);
+                                    }, 100); // Small delay to prevent visual jarring
+                                }
+                            } else if (curEvent.type == "LOAD") {
+                                // Batch all updates for LOAD event
+                                const passengerId = curEvent.data;
+                                
+                                // Update passenger state
+                                updatePassengerState(passengerId, "ONBOARD");
+                                
+                                // Update marker color before adding passenger
+                                this.updateMarkerColor(1); // SERVING
+                                
+                                // Add passenger to set
+                                this.passengers.add(passengerId);
+                                
+                                // Remove the appear marker with a small delay
+                                const appearMarker = window.appearMarkers.get(passengerId);
+                                if (appearMarker) {
+                                    setTimeout(() => {
+                                        appearMarker.remove();
+                                        window.appearMarkers.delete(passengerId);
+                                    }, 100);
+                                }
+                                
+                                // Remove the enqueue line with a small delay
+                                const lineData = window.enqueueLines.get(passengerId);
+                                if (lineData && lineData.trikeId === this.id) {
+                                    setTimeout(() => {
+                                        lineData.line.remove();
+                                        window.enqueueLines.delete(passengerId);
+                                    }, 100);
+                                }
+                                
+                                // Update tooltip after all changes
+                                this.updateTooltip();
+                            } else if (curEvent.type == "ENQUEUE") {
+                                // Update passenger state when tricycle enqueues a passenger
+                                updatePassengerState(curEvent.data, "ENQUEUED");
+                                // Update marker color based on new status
+                                this.updateMarkerColor(5); // ENQUEUING
+                                // Create a line connecting the trike to the passenger
+                                const passengerMarker = window.appearMarkers.get(curEvent.data);
+                                if (passengerMarker) {
+                                    const line = L.polyline([
+                                        this.getLatLng(),
+                                        passengerMarker.getLatLng()
+                                    ], {
+                                        color: 'red',
+                                        weight: 2,
+                                        opacity: 1,
+                                        dashArray: '5, 10'
+                                    }).addTo(map);
+                                    
+                                    window.enqueueLines.set(curEvent.data, {
+                                        trikeId: this.id,
+                                        line: line
+                                    });
+                                }
+                                this.updateTooltip();
                             }
-                        } else if (curEvent.type == "LOAD") {
-                            this.passengers.add(curEvent.data);
-                            updatePassengerState(curEvent.data, "ONBOARD");
-                            // Remove the appear marker for this passenger
-                            console.log(`Attempting to remove appear marker for ${curEvent.data}`);
-                            console.log('Current appear markers:', Array.from(window.appearMarkers.keys()));
-                            const appearMarker = window.appearMarkers.get(curEvent.data);
-                            if (appearMarker) {
-                                console.log(`Found appear marker for ${curEvent.data}, removing...`);
-                                appearMarker.remove();
-                                window.appearMarkers.delete(curEvent.data);
-                            } else {
-                                console.warn(`No appear marker found for ${curEvent.data}`);
-                            }
-                            // Remove the enqueue line
-                            const lineData = window.enqueueLines.get(curEvent.data);
-                            if (lineData && lineData.trikeId === this.id) {
-                                lineData.line.remove();
-                                window.enqueueLines.delete(curEvent.data);
-                            }
-                        } else if (curEvent.type == "ENQUEUE") {
-                            // Update passenger state when tricycle enqueues a passenger
-                            updatePassengerState(curEvent.data, "ENQUEUED");
-                            // Create a line connecting the trike to the passenger
-                            const passengerMarker = window.appearMarkers.get(curEvent.data);
-                            if (passengerMarker) {
-                                const line = L.polyline([
-                                    this.getLatLng(),
-                                    passengerMarker.getLatLng()
-                                ], {
-                                    color: 'red',
-                                    weight: 2,
-                                    opacity: 1,
-                                    dashArray: '5, 10'
-                                }).addTo(map);
-                                window.enqueueLines.set(curEvent.data, {
-                                    trikeId: this.id,
-                                    line: line
-                                });
+                        } else if (this.id.startsWith("passenger")) {
+                            // Handle passenger-specific events
+                            if (curEvent.type === "ENQUEUE") {
+                                updatePassengerState(this.id, "ENQUEUED");
+                                console.log(`Passenger ${this.id} enqueued by ${curEvent.data}`);
+                            } else if (curEvent.type === "RESET") {
+                                updatePassengerState(this.id, "WAITING");
+                                console.log(`Passenger ${this.id} reset by ${curEvent.data}`);
                             }
                         }
-                        this.updateTooltip();
-                    } else if (this.id.startsWith("passenger")) {
-                        // Handle passenger-specific events
-                        if (curEvent.type === "ENQUEUE") {
-                            updatePassengerState(this.id, "ENQUEUED");
-                            console.log(`Passenger ${this.id} enqueued by ${curEvent.data}`);
-                        } else if (curEvent.type === "RESET") {
-                            updatePassengerState(this.id, "WAITING");
-                            console.log(`Passenger ${this.id} reset by ${curEvent.data}`);
-                        }
+                    } else {
+                        console.warn(`Invalid event point for ${this.id}:`, eventPoint);
                     }
                     
                     // Update timestamps to maintain position
@@ -396,12 +532,14 @@ L.Marker.MovingMarker = L.Marker.extend({
                     }
                 } else if (curEvent.type == "FINISH") {
                     this.unbindTooltip();
-                    this.bindTooltip(`${this.id}: Finished trips`).openTooltip();
+                    this.bindTooltip(`${this.id}: Finished trips`, {
+                        permanent: false,
+                        direction: 'top'
+                    });
                     console.log(timestamp-this._startTimeStamp, this.id, ": Done");
                     noRequestAnim = true;
-                }
-                else {
-                    console.error(`Unknown event: ${curEvent}`)
+                } else {
+                    console.error(`Unknown event type: ${curEvent.type}`, curEvent);
                     this._currentEventIndex += 1;
                 }
             }
@@ -454,7 +592,7 @@ L.Marker.MovingMarker = L.Marker.extend({
         this.setLatLng(new_position);
     },
 
-    // Add method to update enqueue lines
+    // Update the updateEnqueueLines method
     updateEnqueueLines: function() {
         // Update all enqueue lines for this trike
         window.enqueueLines.forEach((lineData, passengerId) => {
@@ -470,11 +608,18 @@ L.Marker.MovingMarker = L.Marker.extend({
         });
     },
 
-    // Update remove method to clean up lines
+    // Update remove method to clean up lines and roam path
     remove: function() {
         // Remove all event markers
         this.eventMarkers.forEach(marker => marker.remove());
         this.eventMarkers = [];
+        
+        // Remove roam path if it exists
+        if (this.roamPath) {
+            this.roamPath.line.remove();
+            this.roamPath.startMarker.remove();
+            this.roamPath.endMarker.remove();
+        }
         
         // Remove all enqueue lines for this trike
         if (this.id.startsWith("trike")) {

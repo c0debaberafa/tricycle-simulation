@@ -1,4 +1,4 @@
-OSRM_URL = 'http://localhost:5000'
+OSRM_URL = 'http://localhost:5001'
 
 TOP_LEFT_GRID = [14.7171,121.0616]
 BOT_RIGHT_GRID = [14.7108,121.0673]

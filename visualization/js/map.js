@@ -10,7 +10,7 @@
 
 // ===== Constants and Configuration =====
 const FRAME_DURATION_MS = 16.67;  // 60 FPS for smoother animation
-const SPEED_MULTIPLIER = 5.0;  // Increase speed for better visualization
+const SPEED_MULTIPLIER = 40.0;  // Increased from 5.0 to 40.0 for 8x speed
 
 // ===== Global State =====
 let SIM_TIME = 0;  // Current simulation frame
@@ -23,13 +23,23 @@ let passengerStates = {
     COMPLETED: new Set()
 };
 
-// ===== Map Initialization =====
-let map = L.map('map').setView([14.6436,121.0572], 17);
+// Wait for DOM to be fully loaded before initializing map
+document.addEventListener('DOMContentLoaded', function() {
+    // ===== Map Initialization =====
+    console.log('Initializing map...');
+    let map = L.map('map').setView([14.6436,121.0572], 17);
+    console.log('Map initialized:', map);
 
-L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    maxZoom: 19,
-    attribution: '&copy; <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-}).addTo(map);
+    // Use CartoDB dark theme
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+        maxZoom: 19,
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
+    }).addTo(map);
+    console.log('Tile layer added to map');
+
+    // Make map available globally
+    window.map = map;
+});
 
 // ===== Utility Functions =====
 
@@ -130,13 +140,12 @@ function createRoamEndpointMarker(latlng, tooltip) {
  */
 function simulationTick() {
     SIM_TIME += 1; // Increment frame counter
-    const timeInMs = SIM_TIME * FRAME_DURATION_MS;
     
-    console.log(`Simulation tick - Frame: ${SIM_TIME}, Time: ${timeInMs}ms`);
+    console.log(`Simulation tick - Frame: ${SIM_TIME}`);
 
     // Update all moving markers to current simulation time
     allMovingMarkers.forEach(marker => {
-        marker.setSimTime(timeInMs);
+        marker.setSimTime(GLOBAL_TIME_MS);
     });
 
     setTimeout(simulationTick, FRAME_DURATION_MS);
@@ -153,156 +162,164 @@ function simulationTick() {
 async function show_real(id, t, p) {
     console.log(`Loading simulation data for run ${id}`);
     
-    // Reset passenger states
-    passengerStates = {
-        WAITING: new Set(),
-        ENQUEUED: new Set(),
-        ONBOARD: new Set(),
-        COMPLETED: new Set()
-    };
-
-    // Retrieve simulation data
-    const api = `http://localhost:5050/real/${id}/${t}/${p}`
-    const { trikes, passengers } = await fetch(api).then(res => res.json());
-
-    // Initialize all passengers as WAITING
-    passengers.forEach(passenger => {
-        passengerStates.WAITING.add(passenger.id);
-    });
-    updatePassengerStatus();
-
-    // Clear existing visualization
-    allMovingMarkers.forEach(marker => marker.remove());
-    allMovingMarkers = [];
-
-    // Load and display terminal data
-    console.log('Loading terminal data...');
     try {
-        const terminalsUrl = `http://localhost:5050/real/${id}/terminals.json`;
-        console.log(`Fetching terminal data from: ${terminalsUrl}`);
-        const terminalsResponse = await fetch(terminalsUrl);
-        if (!terminalsResponse.ok) {
-            throw new Error(`HTTP error! status: ${terminalsResponse.status}`);
+        // Reset passenger states
+        passengerStates = {
+            WAITING: new Set(),
+            ENQUEUED: new Set(),
+            ONBOARD: new Set(),
+            COMPLETED: new Set()
+        };
+
+        // Retrieve simulation data
+        const api = `http://localhost:5051/real/${id}/${t}/${p}`
+        console.log('Fetching data from:', api);
+        const response = await fetch(api);
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
         }
-        const terminals = await terminalsResponse.json();
-        console.log('Loaded terminals:', terminals);
-        terminals.forEach(terminal => {
-            createTerminalMarker(
-                [terminal.location[1], terminal.location[0]], // Convert [x,y] to [lat,lng]
-                `Terminal ${terminal.id}: ${terminal.remaining_passengers} passengers, ${terminal.remaining_tricycles} tricycles`
-            );
+        const { trikes, passengers } = await response.json();
+        console.log('Received data:', { trikes, passengers });
+
+        // Initialize all passengers as WAITING
+        passengers.forEach(passenger => {
+            passengerStates.WAITING.add(passenger.id);
         });
-    } catch (error) {
-        console.error('Failed to load terminals:', error);
-    }
+        updatePassengerStatus();
 
-    // Load and display roam endpoints
-    console.log('Loading roam endpoints...');
-    try {
-        const roamUrl = `http://localhost:5050/real/${id}/roam_endpoints.json`;
-        console.log(`Fetching roam endpoints from: ${roamUrl}`);
-        const roamResponse = await fetch(roamUrl);
-        if (!roamResponse.ok) {
-            throw new Error(`HTTP error! status: ${roamResponse.status}`);
+        // Clear existing visualization
+        allMovingMarkers.forEach(marker => marker.remove());
+        allMovingMarkers = [];
+
+        // Load and display terminal data
+        console.log('Loading terminal data...');
+        try {
+            const terminalsUrl = `http://localhost:5050/real/${id}/terminals.json`;
+            console.log(`Fetching terminal data from: ${terminalsUrl}`);
+            const terminalsResponse = await fetch(terminalsUrl);
+            if (!terminalsResponse.ok) {
+                throw new Error(`HTTP error! status: ${terminalsResponse.status}`);
+            }
+            const terminals = await terminalsResponse.json();
+            console.log('Loaded terminals:', terminals);
+            terminals.forEach(terminal => {
+                createTerminalMarker(
+                    [terminal.location[1], terminal.location[0]], // Convert [x,y] to [lat,lng]
+                    `Terminal ${terminal.id}: ${terminal.remaining_passengers} passengers, ${terminal.remaining_tricycles} tricycles`
+                );
+            });
+        } catch (error) {
+            console.error('Failed to load terminals:', error);
         }
-        const roamEndpoints = await roamResponse.json();
-        console.log('Loaded roam endpoints:', roamEndpoints);
-        roamEndpoints.forEach(endpoint => {
-            // Log the raw endpoint data
-            console.log('Processing roam endpoint:', endpoint);
+
+        // Initialize trike markers
+        for(let i=0; i<trikes.length; i++) {
+            const trike = trikes[i];
+            // Use raw speed with multiplier for better visualization
+            const degreesPerMs = (trike.speed * SPEED_MULTIPLIER) / 111000 / 1000;
+            console.log(`Creating trike ${trike.id} with speed ${degreesPerMs} degrees/ms`);
             
-            // Create marker for start point
-            const startLatlng = [endpoint.start_point[1], endpoint.start_point[0]];
-            console.log('Start point coordinates:', startLatlng);
-            createRoamEndpointMarker(
-                startLatlng,
-                `Roam Start: ${endpoint.tricycle_id}`
+            let trike_marker = L.Marker.movingMarker(
+                trike.id,
+                pointsToRaw(trike.path),
+                trike.createTime * FRAME_DURATION_MS,
+                Infinity,
+                degreesPerMs,
+                trike.events
             );
+            allMovingMarkers.push(trike_marker);
+            trike_marker.addTo(map);
+            trike_marker.start(); // Make sure to start the marker
+        }
 
-            // Create marker for end point
-            const endLatlng = [endpoint.end_point[1], endpoint.end_point[0]];
-            console.log('End point coordinates:', endLatlng);
-            createRoamEndpointMarker(
-                endLatlng,
-                `Roam End: ${endpoint.tricycle_id}`
+        // Initialize passenger markers
+        for(let i=0; i<passengers.length; i++) {
+            const passenger = passengers[i];
+            // Create a marker that only shows events, no movement
+            const passenger_marker = L.Marker.movingMarker(
+                passenger.id,
+                [[passenger.src[1], passenger.src[0]]], // Convert [x,y] to [lat,lng] format
+                passenger.createTime * FRAME_DURATION_MS,
+                passenger.deathTime !== -1 ? passenger.deathTime * FRAME_DURATION_MS : Infinity,
+                0,
+                passenger.events
             );
-        });
+            // Don't add the marker to the map, just start it to process events
+            passenger_marker.start();
+        }
+
+        // Start simulation
+        simulationTick();
     } catch (error) {
-        console.error('Failed to load roam endpoints:', error);
+        console.error('Error in show_real:', error);
     }
-
-    // Initialize trike markers
-    for(let i=0; i<trikes.length; i++) {
-        const trike = trikes[i];
-        // Use raw speed with multiplier for better visualization
-        const degreesPerMs = (trike.speed * SPEED_MULTIPLIER) / 111000 / 1000;
-        console.log(`Creating trike ${trike.id} with speed ${degreesPerMs} degrees/ms`);
-        
-        let trike_marker = L.Marker.movingMarker(
-            trike.id,
-            pointsToRaw(trike.path),
-            trike.createTime * FRAME_DURATION_MS,
-            Infinity,
-            degreesPerMs,
-            trike.events
-        );
-        allMovingMarkers.push(trike_marker);
-        trike_marker.addTo(map);
-        trike_marker.start(); // Make sure to start the marker
-    }
-
-    // Initialize passenger markers
-    for(let i=0; i<passengers.length; i++) {
-        const passenger = passengers[i];
-        // Create a marker that only shows events, no movement
-        const passenger_marker = L.Marker.movingMarker(
-            passenger.id,
-            [[passenger.src[1], passenger.src[0]]], // Convert [x,y] to [lat,lng] format
-            passenger.createTime * FRAME_DURATION_MS,
-            passenger.deathTime !== -1 ? passenger.deathTime * FRAME_DURATION_MS : Infinity,
-            0,
-            passenger.events
-        );
-        // Don't add the marker to the map, just start it to process events
-        passenger_marker.start();
-    }
-
-    // Start simulation
-    simulationTick();
 }
 
 function updatePassengerStatus() {
-    let statusDiv = document.getElementById('passengerStatus');
-    if (!statusDiv) {
-        // Create the status div if it doesn't exist
-        statusDiv = document.createElement('div');
-        statusDiv.id = 'passengerStatus';
-        statusDiv.style.position = 'absolute';
-        statusDiv.style.right = '20px';
-        statusDiv.style.top = '20px';
-        statusDiv.style.backgroundColor = 'white';
-        statusDiv.style.padding = '10px';
-        statusDiv.style.border = '1px solid #ccc';
-        statusDiv.style.borderRadius = '5px';
-        statusDiv.style.fontFamily = 'monospace';
-        statusDiv.style.zIndex = '1000';
-        statusDiv.style.whiteSpace = 'pre';
-        document.body.appendChild(statusDiv);
+    const statusPanel = document.getElementById('passenger-status');
+    if (!statusPanel) return;
+
+    // Create status rows if they don't exist
+    if (!statusPanel.querySelector('.status-rows')) {
+        const statusRows = document.createElement('div');
+        statusRows.className = 'status-rows';
+        
+        // Create labels
+        const labels = document.createElement('div');
+        labels.className = 'status-labels';
+        labels.innerHTML = `
+            <div>WAITING</div>
+            <div>ENQUEUED</div>
+            <div>ONBOARD</div>
+            <div>COMPLETED</div>
+        `;
+        statusRows.appendChild(labels);
+
+        // Create content
+        const content = document.createElement('div');
+        content.className = 'status-content';
+        content.innerHTML = `
+            <div class="status-group waiting"></div>
+            <div class="status-group enqueued"></div>
+            <div class="status-group onboard"></div>
+            <div class="status-group completed"></div>
+        `;
+        statusRows.appendChild(content);
+
+        statusPanel.appendChild(statusRows);
     }
 
-    // Format passenger numbers (remove 'passenger_' prefix and sort numerically)
-    const formatPassengers = (set) => Array.from(set)
-        .map(id => id.replace('passenger_', ''))
-        .sort((a, b) => parseInt(a) - parseInt(b))
-        .join(' ');
+    // Update each status group
+    const groups = {
+        WAITING: statusPanel.querySelector('.waiting'),
+        ENQUEUED: statusPanel.querySelector('.enqueued'),
+        ONBOARD: statusPanel.querySelector('.onboard'),
+        COMPLETED: statusPanel.querySelector('.completed')
+    };
 
-    const content = `PASSENGER STATUS
-===============
-WAITING: ${formatPassengers(passengerStates.WAITING)}
-ENQUEUED: ${formatPassengers(passengerStates.ENQUEUED)}
-ONBOARD: ${formatPassengers(passengerStates.ONBOARD)}
-COMPLETED: ${formatPassengers(passengerStates.COMPLETED)}`;
-    statusDiv.textContent = content;
+    // Clear existing content
+    Object.values(groups).forEach(group => {
+        if (group) group.innerHTML = '';
+    });
+
+    // Add passengers to their respective groups
+    Object.entries(passengerStates).forEach(([state, passengers]) => {
+        const group = groups[state];
+        if (!group) return;
+
+        // Convert passenger IDs to numbers and sort them
+        const sortedPassengers = Array.from(passengers)
+            .map(id => parseInt(id.replace('passenger_', '')))
+            .sort((a, b) => a - b);
+
+        // Create passenger elements
+        sortedPassengers.forEach(num => {
+            const passenger = document.createElement('div');
+            passenger.className = 'passenger-id';
+            passenger.textContent = num;
+            group.appendChild(passenger);
+        });
+    });
 }
 
 function updatePassengerState(passengerId, newState) {
@@ -314,10 +331,32 @@ function updatePassengerState(passengerId, newState) {
     updatePassengerStatus();
 }
 
+// Tab switching functionality
+document.addEventListener('DOMContentLoaded', function() {
+    const tabButtons = document.querySelectorAll('.tab-button');
+    const tabPanes = document.querySelectorAll('.tab-pane');
+
+    tabButtons.forEach(button => {
+        button.addEventListener('click', () => {
+            // Remove active class from all buttons and panes
+            tabButtons.forEach(btn => btn.classList.remove('active'));
+            tabPanes.forEach(pane => pane.classList.remove('active'));
+
+            // Add active class to clicked button and corresponding pane
+            button.classList.add('active');
+            const tabId = button.getAttribute('data-tab');
+            document.getElementById(tabId).classList.add('active');
+        });
+    });
+});
+
 // use the ID of the run you want to visualize
 // run ID, num trikes, num passengers
-show_real("3-2-20-yxjmsvodgtww", 3, 20)
+// /show_real("3-2-20-mwmfnjlaeogv", 3, 20)
 
 // /3-2-20-omceyaycyqmn 3-2-20-mybbizldhghs
-generator/data/real/3-2-20-yxjmsvodgtww
+// generator/data/real/3-2-20-yxjmsvodgtww
+
+// Start the visualization
+show_real("3-2-20-mwmfnjlaeogv", 3, 20);
 

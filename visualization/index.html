@@ -42,15 +42,33 @@
         referrerpolicy="no-referrer" 
     />
 
-    <script src="js/moving_marker.js"></script>
+    <!-- Load scripts in correct order with defer -->
+    <script src="js/map.js" defer></script>
+    <script src="js/moving_marker.js" defer></script>
 </head>
 <body>
     <div id="map"></div>
-    <div class="event-log-container">
-        <div class="event-log" id="eventLog"></div>
+    <div class="tabbed-container">
+        <div class="tab-header">
+            <button class="tab-button active" data-tab="event-log">EVENT LOG</button>
+            <button class="tab-button" data-tab="passenger-status">PASSENGER STATUS</button>
+            <button class="tab-button" data-tab="tricycle-status">TRICYCLE STATUS</button>
+            <button class="tab-button" data-tab="metadata">METADATA</button>
+        </div>
+        <div class="tab-content">
+            <div class="tab-pane active" id="event-log">
+                <div class="event-log" id="eventLog"></div>
+            </div>
+            <div class="tab-pane" id="passenger-status">
+                <div id="passengerStatus"></div>
+            </div>
+            <div class="tab-pane" id="tricycle-status">
+                <div id="tricycleStatus"></div>
+            </div>
+            <div class="tab-pane" id="metadata">
+                <div id="metadataContent"></div>
+            </div>
+        </div>
     </div>
-
-    <!-- Main JS -->
-    <script src="js/map.js"></script>
 </body>
 </html>

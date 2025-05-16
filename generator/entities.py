@@ -1,5 +1,6 @@
 import json
 import util
+from scenarios.util import gen_random_bnf_roam_path
 from enum import Enum
 
 MS_PER_FRAME = 1000
@@ -20,7 +21,8 @@ class TricycleStatus(Enum):
     SERVING = 1       # Currently serving passengers
     TERMINAL = 2      # Parked at a terminal
     ROAMING = 3       # Actively roaming (for roaming tricycles)
-    RETURNING_TO_TERMINAL = 4  # Returning to a terminal after dropping off passengers
+    RETURNING = 4     # Returning to terminal/roam path after dropping off passengers
+    ENQUEUING = 5     # Proceeding to pick up an enqueued passenger
 
 class NoMorePassengers(Exception):
     def __init__(self, *args: object) -> None:
@@ -357,7 +359,8 @@ class Tricycle(Actor):
             deathTime: int,
             scheduler = None,
             map: Map | None = None,
-            useMeters: bool = False
+            useMeters: bool = False,
+            maxCycles: int = 5
     ):
         super().__init__(createTime, deathTime)
         self.id = id
@@ -373,6 +376,8 @@ class Tricycle(Actor):
         # define the tricycle's driving behaviour
         self.roamPath = roamPath
         self.scheduler = scheduler
+        self.cycleCount = 0 # To count how many cycles a tricycle has roamed with no pickups
+        self.maxCycles = maxCycles # To count how many cycles a tricycle can roam with no pickups before it is considered dead
 
         # initialize the tricycle
         self.isRoaming = isRoaming
@@ -627,6 +632,35 @@ class Tricycle(Actor):
         if not self.updatePath(nxtPoint, priority='append'):
             print(f"Failed to add next cycle point", flush=True)
 
+    def newRoamPath(self, current_time: int):
+        """
+        Generates a new roaming path for the tricycle.
+        Uses updatePath with append priority to ensure path continuity
+        and not interrupt current passenger service.
+        """
+        # Consider including probabilities for different path types
+        new_path = gen_random_bnf_roam_path()
+        if new_path:
+            # Use 'append' priority to maintain path continuity and current service
+            if self.updatePath(new_path.getStartPoint(), priority='append'):
+                self.roamPath = new_path
+                self.cycleCount = 0
+                
+                # Add event recording the new roam path endpoints
+                self.events.append({
+                    "type": "NEW_ROAM_PATH",
+                    "data": {
+                        "start": new_path.getStartPoint().toTuple(),
+                        "end": new_path.path[-1].toTuple()
+                    },
+                    "time": current_time,
+                    "location": [self.path[-1].x, self.path[-1].y]
+                })
+                return [new_path.getStartPoint(), new_path.path[-1]]
+            else:
+                print(f"Failed to update path for new roam path", flush=True)
+                return None
+
     ########## Passenger Management Methods ##########
 
     def hasPassenger(self):
@@ -690,6 +724,9 @@ class Tricycle(Actor):
                 "location": [p.src.x, p.src.y]
             })
 
+            # Set status to ENQUEUING
+            self.setStatus(TricycleStatus.ENQUEUING)
+
             # Add pickup point to the front of to_go if not already there
             if not any(point.x == p.src.x and point.y == p.src.y for point in self.to_go):
                 if not self.updatePath(p.src, priority='front'):
@@ -697,6 +734,11 @@ class Tricycle(Actor):
                     # If we failed to add the pickup point, reset the passenger
                     p.onReset(current_time, [p.src.x, p.src.y])
                     self.enqueuedPassenger = None
+                    # Reset status based on roaming state
+                    if self.isRoaming:
+                        self.setStatus(TricycleStatus.ROAMING)
+                    else:
+                        self.setStatus(TricycleStatus.IDLE)
                 else:
                     print(f"Enqueued passenger {p.id} at distance {distance:.2f}m", flush=True)
                     return p
@@ -721,6 +763,7 @@ class Tricycle(Actor):
         """
         if len(self.passengers) >= self.capacity:
             return False
+        
         self.events.append({
             "type": "LOAD",
             "data": p.id,
@@ -738,6 +781,9 @@ class Tricycle(Actor):
         self.passengers.append(p)
         self.enqueuedPassenger = None  # Clear enqueued passenger
         p.onLoad(self.id, current_time, [self.path[-1].x, self.path[-1].y])
+        
+        # Reset cycle count on successful pickup
+        self.cycleCount = 0
         
         # Only set status to SERVING if not already serving
         if self.status != TricycleStatus.SERVING:
@@ -868,9 +914,9 @@ class Tricycle(Actor):
                 if self.status != TricycleStatus.ROAMING:  # Only set if not already in ROAMING
                     print(f"Tricycle {self.id} transitioning to ROAMING status after dropping off all passengers", flush=True)
                     self.setStatus(TricycleStatus.ROAMING)
-            elif self.status != TricycleStatus.RETURNING_TO_TERMINAL:  # Only set if not already returning
-                print(f"Tricycle {self.id} transitioning to RETURNING_TO_TERMINAL status after dropping off all passengers", flush=True)
-                self.setStatus(TricycleStatus.RETURNING_TO_TERMINAL)
+            elif self.status != TricycleStatus.RETURNING:  # Only set if not already returning
+                print(f"Tricycle {self.id} transitioning to RETURNING status after dropping off all passengers", flush=True)
+                self.setStatus(TricycleStatus.RETURNING)
         
         # Add a small wait after dropping off passengers to prevent erratic movement
         if dropped_any:
@@ -940,11 +986,12 @@ class Tricycle(Actor):
             bool: True if transition is valid, False otherwise
         """
         valid_transitions = {
-            TricycleStatus.IDLE: [TricycleStatus.SERVING, TricycleStatus.TERMINAL],
-            TricycleStatus.SERVING: [TricycleStatus.RETURNING_TO_TERMINAL, TricycleStatus.ROAMING],
-            TricycleStatus.TERMINAL: [TricycleStatus.SERVING],
-            TricycleStatus.ROAMING: [TricycleStatus.SERVING], 
-            TricycleStatus.RETURNING_TO_TERMINAL: [TricycleStatus.TERMINAL]
+            TricycleStatus.IDLE: [TricycleStatus.SERVING, TricycleStatus.TERMINAL, TricycleStatus.ENQUEUING],
+            TricycleStatus.SERVING: [TricycleStatus.RETURNING, TricycleStatus.ROAMING],
+            TricycleStatus.TERMINAL: [TricycleStatus.SERVING, TricycleStatus.ENQUEUING],
+            TricycleStatus.ROAMING: [TricycleStatus.SERVING, TricycleStatus.ENQUEUING], 
+            TricycleStatus.RETURNING: [TricycleStatus.TERMINAL, TricycleStatus.ENQUEUING],
+            TricycleStatus.ENQUEUING: [TricycleStatus.SERVING, TricycleStatus.ROAMING, TricycleStatus.RETURNING]
         }
         return new_status in valid_transitions.get(self.status, [])
 
@@ -990,8 +1037,21 @@ class Tricycle(Actor):
             "time": current_time,
             "location": [self.path[-1].x, self.path[-1].y]
         })
+   
+   ########## Behavior Methods ##########
 
-    ########## Serialization Methods ##########
+    def onCycleComplete(self, current_time: int):
+        """
+        Called when a tricycle completes a cycle.
+        Only changes roam path if tricycle is actively roaming with no passengers.
+        """
+        # Only increment cycle count if we're actually roaming
+        if self.status == TricycleStatus.ROAMING and not self.hasPassenger() and not self.enqueuedPassenger:
+            self.cycleCount += 1
+            if self.cycleCount >= self.maxCycles:
+                self.newRoamPath(current_time)
+   
+   ########## Serialization Methods ##########
 
     def toJSON(self):
         """
@@ -1015,7 +1075,10 @@ class Tricycle(Actor):
             "totalProductiveDistanceM": self.totalProductiveDistanceM,
             "waitingTime": self.waitingTime,
             "path": [p.toJSON() for p in self.path],
-            "events": self.events
+            "events": self.events,
+            "cycleCount": self.cycleCount,
+            "maxCycles": self.maxCycles,
+            "status": self.status.value
         }
 
     def __repr__(self) -> str:
@@ -1042,7 +1105,7 @@ class Terminal:
 
     def addTricycle(self, tricycle: Tricycle):
         """Add a tricycle to the terminal if it's in a valid state."""
-        if tricycle.status not in [TricycleStatus.IDLE, TricycleStatus.RETURNING_TO_TERMINAL]:
+        if tricycle.status not in [TricycleStatus.IDLE, TricycleStatus.RETURNING]:
             print(f"Cannot add tricycle {tricycle.id} to terminal: invalid status {tricycle.status}", flush=True)
             return
         self.queue.append(tricycle)

@@ -20,7 +20,6 @@ from util import NoRoute, get_euclidean_distance, find_path_between_points_in_os
 
 from scenarios.util import (
     gen_random_valid_point, 
-    get_random_valid_point,
     gen_random_bnf_roam_path_with_points,
     get_valid_points
 )
@@ -257,31 +256,26 @@ class Simulator:
             trike = None
             in_terminal: entities.Terminal = None
             if random.random() < self.roamingTrikeChance:
-                # Generate roaming tricycles on the road
-                while True:
-                    try:
-                        if len(terminals) < 2:
-                            raise ValueError("Need at least 2 terminals to generate roaming trike.")
-
-                        checkpoints = [x.location for x in random.sample(terminals, k=2)]
-                        checkpoints.insert(1, random.choice(hotspots))
-                        roam_path = gen_random_bnf_roam_path_with_points(*checkpoints)
-                        break
-                    except Exception as e:
-                        print(f"Retrying path generation due to error: {e}")
-                        continue
+                # Generate roaming tricycle with temporary path
+                start_hotspot = random.choice(hotspots)  # Randomly select starting hotspot
                 trike = entities.Tricycle(
                     id=f"trike_{idx}",
-                    roamPath=roam_path,
+                    roamPath=None,  # Start with no path
                     isRoaming=True,
-                    startX=roam_path.getStartPoint().x,
-                    startY=roam_path.getStartPoint().y,
+                    startX=start_hotspot.x,  # Use random hotspot position
+                    startY=start_hotspot.y,
                     createTime=0,
                     deathTime=-1,
                     map=map,
+                    maxCycles=5,
                     **self.trikeConfig
                 )
-                print("Generated {} with roam path starting at {}".format(trike.id, roam_path.getStartPoint().toTuple()), flush=True)
+                
+                # Generate initial roam path
+                if trike.newRoamPath(0):  # Pass current_time=0
+                    print(f"Generated {trike.id} with initial roam path at {start_hotspot.toTuple()}", flush=True)
+                else:
+                    print(f"Failed to generate initial roam path for {trike.id}", flush=True)
             else:
                 # Generate non-roaming tricycles at terminals
                 if len(self.terminalTrikeDistrib):
@@ -502,6 +496,8 @@ class Simulator:
                                 
                         else:
                             print("----Trike didn't move. Attempting to load next cycle point")
+                            # Call onCycleComplete before loading next point
+                            trike.onCycleComplete(cur_time[0])
                             trike.loadNextCyclePoint()
                 except Exception as e:
                     print(f"Encountered error while trying to move tricycle {trike.id}:", e)
