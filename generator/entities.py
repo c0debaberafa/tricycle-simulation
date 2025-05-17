@@ -512,6 +512,12 @@ class Tricycle(Actor):
             - Handles path priority based on context
             - Ensures path continuity when adding new paths
         """
+        # Only block path updates if we're enqueuing AND this isn't for the enqueued passenger
+        if self.status == TricycleStatus.ENQUEUING:
+            if not self.enqueuedPassenger or not self.map.isAtLocation(new_destination, self.enqueuedPassenger.src):
+                print(f"Tricycle {self.id} cannot update path while enqueuing", flush=True)
+                return False
+        
         try:
             print(f"Tricycle {self.id} finding path from {self.path[-1].toTuple()} to {new_destination.toTuple()} with priority {priority}", flush=True)
             
@@ -716,7 +722,7 @@ class Tricycle(Actor):
             
             # Update passenger status to ENQUEUED and claim them
             p.onEnqueue(self.id, current_time, [p.src.x, p.src.y])
-            self.enqueuedPassenger = p.id  # Track enqueued passenger
+            self.enqueuedPassenger = p  # Track enqueued passenger
             self.events.append({
                 "type": "ENQUEUE",
                 "data": p.id,
@@ -725,7 +731,7 @@ class Tricycle(Actor):
             })
 
             # Set status to ENQUEUING
-            self.setStatus(TricycleStatus.ENQUEUING)
+            self.updateStatus(TricycleStatus.ENQUEUING)
 
             # Add pickup point to the front of to_go if not already there
             if not any(point.x == p.src.x and point.y == p.src.y for point in self.to_go):
@@ -736,9 +742,9 @@ class Tricycle(Actor):
                     self.enqueuedPassenger = None
                     # Reset status based on roaming state
                     if self.isRoaming:
-                        self.setStatus(TricycleStatus.ROAMING)
+                        self.updateStatus(TricycleStatus.ROAMING)
                     else:
-                        self.setStatus(TricycleStatus.IDLE)
+                        self.updateStatus(TricycleStatus.IDLE)
                 else:
                     print(f"Enqueued passenger {p.id} at distance {distance:.2f}m", flush=True)
                     return p
@@ -787,7 +793,7 @@ class Tricycle(Actor):
         
         # Only set status to SERVING if not already serving
         if self.status != TricycleStatus.SERVING:
-            self.setStatus(TricycleStatus.SERVING)
+            self.updateStatus(TricycleStatus.SERVING)
         return True
 
     def tryLoad(self, current_time: int):
@@ -856,6 +862,7 @@ class Tricycle(Actor):
                             print(f"Scheduled destination for {p.id}", flush=True)
                     except NoMorePassengers:
                         print(f"No more passengers to schedule for {self.id}", flush=True)
+                    self.updateStatus(TricycleStatus.SERVING)
                 else:
                     # If we can't load the passenger (e.g., capacity reached),
                     # reset their status back to WAITING and clear claim
@@ -911,12 +918,10 @@ class Tricycle(Actor):
         # If all passengers are dropped off, update status
         if not self.passengers:
             if self.isRoaming:
-                if self.status != TricycleStatus.ROAMING:  # Only set if not already in ROAMING
-                    print(f"Tricycle {self.id} transitioning to ROAMING status after dropping off all passengers", flush=True)
-                    self.setStatus(TricycleStatus.ROAMING)
-            elif self.status != TricycleStatus.RETURNING:  # Only set if not already returning
-                print(f"Tricycle {self.id} transitioning to RETURNING status after dropping off all passengers", flush=True)
-                self.setStatus(TricycleStatus.RETURNING)
+                if self.status != TricycleStatus.ROAMING:
+                    self.updateStatus(TricycleStatus.ROAMING)
+            elif self.status != TricycleStatus.RETURNING:
+                self.updateStatus(TricycleStatus.RETURNING)
         
         # Add a small wait after dropping off passengers to prevent erratic movement
         if dropped_any:
@@ -967,6 +972,7 @@ class Tricycle(Actor):
                 print(f"Failed to update path for {p.id} to {dst_point.toTuple()}", flush=True)
                 return None
             print(f"Successfully scheduled path for {p.id} to {dst_point.toTuple()}", flush=True)
+            self.updateStatus(TricycleStatus.SERVING)
             return p
         
         except util.NoRoute:
@@ -991,34 +997,23 @@ class Tricycle(Actor):
             TricycleStatus.TERMINAL: [TricycleStatus.SERVING, TricycleStatus.ENQUEUING],
             TricycleStatus.ROAMING: [TricycleStatus.SERVING, TricycleStatus.ENQUEUING], 
             TricycleStatus.RETURNING: [TricycleStatus.TERMINAL, TricycleStatus.ENQUEUING],
-            TricycleStatus.ENQUEUING: [TricycleStatus.SERVING, TricycleStatus.ROAMING, TricycleStatus.RETURNING]
+            TricycleStatus.ENQUEUING: [TricycleStatus.SERVING, TricycleStatus.ROAMING, TricycleStatus.IDLE]
         }
         return new_status in valid_transitions.get(self.status, [])
 
-    def setStatus(self, new_status: TricycleStatus) -> bool:
+    def updateStatus(self, new_status: TricycleStatus) -> bool:
         """
-        Safely changes the tricycle's status.
+        Simple function to update tricycle status with validation.
         
         Args:
             new_status: The desired new status
             
         Returns:
-            bool: True if transition was successful, False otherwise
-            
-        Note:
-            - Clears path when transitioning to ROAMING
-            - Loads next cycle point for roaming tricycles
+            bool: True if status was updated successfully, False otherwise
         """
         if self.validateStatusTransition(new_status):
-            # Clear to_go queue when transitioning to ROAMING
-            if new_status == TricycleStatus.ROAMING:
-                self.to_go = []
-                if self.roamPath:
-                    self.loadNextCyclePoint()
-                
             self.status = new_status
             return True
-        print(f"Invalid status transition for {self.id}: {self.status} -> {new_status}", flush=True)
         return False
 
     def finishTrip(self, current_time: int):
@@ -1110,7 +1105,7 @@ class Terminal:
             return
         self.queue.append(tricycle)
         tricycle.active = False
-        if not tricycle.setStatus(TricycleStatus.TERMINAL):
+        if not tricycle.updateStatus(TricycleStatus.TERMINAL):
             print(f"Warning: Failed to set tricycle {tricycle.id} to TERMINAL status", flush=True)
     
     def addPassenger(

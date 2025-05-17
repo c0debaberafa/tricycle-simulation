@@ -172,7 +172,7 @@ async function show_real(id, t, p) {
         };
 
         // Retrieve simulation data
-        const api = `http://localhost:5051/real/${id}/${t}/${p}`
+        const api = `http://localhost:5052/real/${id}/${t}/${p}`
         console.log('Fetching data from:', api);
         const response = await fetch(api);
         if (!response.ok) {
@@ -194,7 +194,7 @@ async function show_real(id, t, p) {
         // Load and display terminal data
         console.log('Loading terminal data...');
         try {
-            const terminalsUrl = `http://localhost:5050/real/${id}/terminals.json`;
+            const terminalsUrl = `http://localhost:5052/real/${id}/terminals.json`;
             console.log(`Fetching terminal data from: ${terminalsUrl}`);
             const terminalsResponse = await fetch(terminalsUrl);
             if (!terminalsResponse.ok) {
@@ -358,5 +358,5 @@ document.addEventListener('DOMContentLoaded', function() {
 // generator/data/real/3-2-20-yxjmsvodgtww
 
 // Start the visualization
-show_real("3-2-20-mwmfnjlaeogv", 3, 20);
+show_real("3-2-20-djpjluhsscey", 3, 20);
 
