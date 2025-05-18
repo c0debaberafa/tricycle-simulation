@@ -9,7 +9,7 @@ if __name__ == '__main__':
     NUM_TRIKES = 3
     NUM_TERMINALS = 2
     NUM_PASSENGERS = 20
-    MAX_TIME = 3_600
+    MAX_TIME = 5_000 
     TEST_COUNT = 1
     
     # you can look at the code of Simulator for more options
@@ -17,8 +17,8 @@ if __name__ == '__main__':
         totalTrikes=NUM_TRIKES,
         totalTerminals=NUM_TERMINALS,
         totalPassengers=NUM_PASSENGERS,
-        roadPassengerChance=1.0,
-        roamingTrikeChance=1.0,
+        roadPassengerChance=0.0,
+        roamingTrikeChance=0.0,
         useFixedHotspots=True, # only use if you have setup hotspots in config
         useFixedTerminals=False, # only use if you have setup hotspots in config
         useSmartScheduler=True,

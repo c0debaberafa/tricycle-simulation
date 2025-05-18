@@ -486,8 +486,10 @@ class Simulator:
                             if nearest_terminal is not None:
                                 print("------Found nearest terminal", nearest_terminal.location.toTuple(), flush=True)
                                 try:
-                                    trike.addToGo(nearest_terminal.location)
-                                except NoRoute:
+                                    if not trike.updatePath(nearest_terminal.location, priority='front'):
+                                        print("------No Route found. Finishing trip", flush=True)
+                                        trike.finishTrip(cur_time[0])
+                                except util.NoRoute:
                                     print("------No Route found. Finishing trip", flush=True)
                                     trike.finishTrip(cur_time[0])
                             elif nearest_distance is None:
@@ -561,6 +563,35 @@ class Simulator:
         print(f"Active Tricycles: {active_tricycles}/{self.totalTrikes}")
         print("------------------")
 
+        # Return summary statistics
+        summary_stats = {
+            "total_trips_completed": completed_trips,
+            "completion_rate": (completed_trips/self.totalPassengers)*100,
+            "average_wait_time": total_wait_time/completed_trips if completed_trips > 0 else 0,
+            "average_travel_time": total_travel_time/completed_trips if completed_trips > 0 else 0,
+            "total_distance_km": total_distance/1000,
+            "productive_distance_km": total_productive_distance/1000,
+            "efficiency_percentage": (total_productive_distance/total_distance)*100,
+            "active_tricycles": active_tricycles,
+            "total_tricycles": self.totalTrikes,
+            "simulation_parameters": {
+                "total_trikes": self.totalTrikes,
+                "total_terminals": self.totalTerminals,
+                "total_passengers": self.totalPassengers,
+                "use_smart_scheduler": self.useSmartScheduler,
+                "trike_capacity": self.trikeConfig["capacity"],
+                "is_realistic": self.isRealistic,
+                "use_fixed_hotspots": self.useFixedHotspots,
+                "use_fixed_terminals": self.useFixedTerminals,
+                "road_passenger_chance": self.roadPassengerChance,
+                "roaming_trike_chance": self.roamingTrikeChance
+            }
+        }
+
+        # Write summary statistics to file
+        with open(f"data/real/{run_id}/summary.json", "w+") as f:
+            json.dump(summary_stats, f, indent=2)
+
         last_active[0] += 1 if self.isRealistic else entities.MS_PER_FRAME
 
         run_metadata["endTime"] = cur_time
@@ -611,3 +642,5 @@ class Simulator:
         for passenger in passengers:
             with open(f"data/real/{run_id}/{passenger.id}.json", "w+") as f:
                 f.write(repr(passenger))
+        
+        return summary_stats
