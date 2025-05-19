@@ -40,6 +40,9 @@ window.dropoffMarkers = new Map(); // Store dropoff markers
 window.enqueueLines = new Map();   // Store lines connecting trikes to enqueued passengers
 // Format: Map<passengerId, {trikeId: string, line: L.Polyline}>
 
+// Global frame counter
+window.CURRENT_FRAME = 0;
+
 function update_time() {
     window.GLOBAL_TIME_MS += REFRESH_TIME;
     setTimeout(update_time, REFRESH_TIME);
@@ -67,6 +70,8 @@ L.Marker.MovingMarker = L.Marker.extend({
         this.events = events;
         this.eventMarkers = []; // Store references to event markers
         this.passengers = new Set(); // Track current passengers
+        this.currentPathIndex = 0;
+        this.currentEventIndex = 0;
 
         // Only create and add the base marker for tricycles
         if (!this.id.startsWith("passenger")) {
@@ -371,7 +376,7 @@ L.Marker.MovingMarker = L.Marker.extend({
             }
             
             if (this.events != null) {
-                const curEvent = this.events[this._currentEventIndex];
+                const curEvent = this.events[this.currentEventIndex];
                 if (curEvent.type == "APPEAR") {
                     // For passengers, use the event location directly
                     const location = this.id.startsWith("passenger") ? 
@@ -383,12 +388,12 @@ L.Marker.MovingMarker = L.Marker.extend({
                     const message = `${this.id}: ${curEvent.type}`;
                     this.createEventMarker(location[0], location[1], message);
                     this.logEvent(Math.floor((timestamp - this._startTimeStamp) / REFRESH_TIME), curEvent.type);
-                    this._currentEventIndex += 1;
+                    this.currentEventIndex += 1;
                 } else if (curEvent.type == "MOVE") {
                     const timeElapsed = timestamp - this._prevTimeStamp;
                     const pathDistanceTravelled = this.SPEED * timeElapsed;
-                    const curPoint = this.path[this._currentPathIndex];
-                    const nxtPoint = this.path[this._currentPathIndex+1];
+                    const curPoint = this.path[this.currentPathIndex];
+                    const nxtPoint = this.path[this.currentPathIndex+1];
                     const segmentProgress = Math.min(1, pathDistanceTravelled / getEuclideanDistance(curPoint, nxtPoint));
                     const new_position = interpolatePosition(curPoint, nxtPoint, segmentProgress);
             
@@ -401,15 +406,15 @@ L.Marker.MovingMarker = L.Marker.extend({
 
                     if (Math.round(segmentProgress*100) == 100) {
                         this._prevTimeStamp = timestamp;
-                        this._currentPathIndex += 1;
+                        this.currentPathIndex += 1;
                         curEvent.data -= 1;
 
                         if (curEvent.data == 0) {
-                            this._currentEventIndex += 1;
+                            this.currentEventIndex += 1;
                             // If this was a roam path, create the visualization
-                            if (curEvent.isRoam && this._currentPathIndex > 0) {
-                                const startIdx = Math.max(0, this._currentPathIndex - curEvent.pathLength);
-                                const endIdx = Math.min(this.path.length - 1, this._currentPathIndex);
+                            if (curEvent.isRoam && this.currentPathIndex > 0) {
+                                const startIdx = Math.max(0, this.currentPathIndex - curEvent.pathLength);
+                                const endIdx = Math.min(this.path.length - 1, this.currentPathIndex);
                                 if (startIdx < endIdx) {
                                     const roamPath = this.path.slice(startIdx, endIdx + 1);
                                     if (roamPath.length >= 2) {
@@ -422,7 +427,7 @@ L.Marker.MovingMarker = L.Marker.extend({
                 } else if (curEvent.type == "DROP-OFF" || curEvent.type == "LOAD" || 
                           curEvent.type == "ENQUEUE" || curEvent.type == "RESET") {
                     // Store current position and ensure it's maintained
-                    const eventPoint = this.path[this._currentPathIndex];
+                    const eventPoint = this.path[this.currentPathIndex];
                     if (eventPoint && Array.isArray(eventPoint) && eventPoint.length === 2) {
                         // Ensure we're at the exact event location
                         this.setLatLng(eventPoint);
@@ -523,12 +528,12 @@ L.Marker.MovingMarker = L.Marker.extend({
                     
                     // Update timestamps to maintain position
                     this._prevTimeStamp = timestamp;
-                    this._currentEventIndex += 1;
+                    this.currentEventIndex += 1;
                 } else if (curEvent.type == "WAIT") {
                     const timeElapsed = timestamp - this._prevTimeStamp;
                     curEvent.data -= timeElapsed;
                     if (curEvent.data <= 0) {
-                        this._currentEventIndex += 1;
+                        this.currentEventIndex += 1;
                     }
                 } else if (curEvent.type == "FINISH") {
                     this.unbindTooltip();
@@ -540,7 +545,7 @@ L.Marker.MovingMarker = L.Marker.extend({
                     noRequestAnim = true;
                 } else {
                     console.error(`Unknown event type: ${curEvent.type}`, curEvent);
-                    this._currentEventIndex += 1;
+                    this.currentEventIndex += 1;
                 }
             }
         } else {
