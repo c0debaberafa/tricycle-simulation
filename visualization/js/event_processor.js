@@ -393,6 +393,9 @@ export class EventProcessor {
                         this.visualManager.addMarker('load', event.data, newLoadMarker);
                     }
                     
+                    // Remove enqueue line for this passenger
+                    this.visualManager.removeEnqueueLine(event.data);
+                    
                     // Update passenger state
                     marker.passengers.add(event.data);
                     // Remove the appear marker for this passenger
@@ -442,6 +445,24 @@ export class EventProcessor {
                     break;
 
                 case "ENQUEUE":
+                    // Create enqueue line between trike and passenger
+                    const passengerMarker = this.visualManager.getMarker('appear', event.data);
+                    if (passengerMarker) {
+                        // Check if enqueue line already exists for this passenger
+                        const existingLine = this.visualManager.markers.enqueueLines.get(event.data);
+                        if (!existingLine) {
+                            console.log(`Creating enqueue line for passenger ${event.data}`);
+                            this.visualManager.createEnqueueLine(
+                                marker.id,
+                                event.data,
+                                marker.getLatLng(),
+                                passengerMarker.getLatLng()
+                            );
+                        } else {
+                            console.log(`Enqueue line already exists for passenger ${event.data}`);
+                        }
+                    }
+                    
                     this.processEvent({
                         type: 'UPDATE_PASSENGER',
                         passengerId: event.data,

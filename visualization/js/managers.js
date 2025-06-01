@@ -121,23 +121,53 @@ export class VisualManager {
 
     // Enqueue Line Management
     createEnqueueLine(trikeId, passengerId, trikePos, passengerPos) {
+        // Validate all inputs
+        if (!trikeId || !passengerId) {
+            console.error('Missing trikeId or passengerId for enqueue line');
+            return;
+        }
+
+        if (!trikePos || !passengerPos) {
+            console.error('Missing positions for enqueue line:', { trikePos, passengerPos });
+            return;
+        }
+
         if (!isValidCoordinates([trikePos.lat, trikePos.lng]) || 
             !isValidCoordinates([passengerPos.lat, passengerPos.lng])) {
             console.error(`Invalid coordinates for enqueue line:`, { trikePos, passengerPos });
             return;
         }
 
+        // Check if line already exists
+        if (this.markers.enqueueLines.has(passengerId)) {
+            console.log(`Enqueue line already exists for passenger ${passengerId}`);
+            return;
+        }
+
+        console.log(`Creating enqueue line for passenger ${passengerId} between:`, {
+            trike: [trikePos.lat, trikePos.lng],
+            passenger: [passengerPos.lat, passengerPos.lng]
+        });
+
+        // Create the line with exact marker positions
         const line = L.polyline([trikePos, passengerPos], {
             color: 'red',
             weight: 2,
-            opacity: 1,
-            dashArray: '5, 10'
+            opacity: 0.5,
+            dashArray: '5, 10',
+            interactive: false  // Make line non-interactive
         }).addTo(map);
         
         this.markers.enqueueLines.set(passengerId, {
             trikeId: trikeId,
             line: line
         });
+
+        // Update trike color to red (status 5 = ENQUEUING)
+        const trikeMarker = this.getMarker('trike', trikeId);
+        if (trikeMarker) {
+            this.updateTrikeColor(trikeMarker, 5);
+        }
     }
 
     updateEnqueueLine(passengerId, trikePos, passengerPos) {
@@ -159,6 +189,30 @@ export class VisualManager {
             lineData.line.remove();
             this.markers.enqueueLines.delete(passengerId);
         }
+    }
+
+    updateEnqueueLines(trikeId, trikePos) {
+        if (!trikePos || !isValidCoordinates([trikePos.lat, trikePos.lng])) {
+            console.warn(`Invalid trike position for updating enqueue lines:`, trikePos);
+            return;
+        }
+
+        this.markers.enqueueLines.forEach((lineData, passengerId) => {
+            if (lineData.trikeId === trikeId) {
+                const passengerMarker = this.getMarker('appear', passengerId);
+                if (passengerMarker) {
+                    const passengerPos = passengerMarker.getLatLng();
+                    if (passengerPos && isValidCoordinates([passengerPos.lat, passengerPos.lng])) {
+                        if (lineData.line) {
+                            // Update line with exact marker positions
+                            lineData.line.setLatLngs([trikePos, passengerPos]);
+                        }
+                    } else {
+                        console.warn(`Invalid passenger position for updating enqueue line:`, passengerPos);
+                    }
+                }
+            }
+        });
     }
 
     // UI Updates
@@ -591,18 +645,6 @@ export class VisualManager {
     processEventTiming(event, currentTime) {
         if (!event || !event.time) return false;
         return event.time * REFRESH_TIME <= currentTime;
-    }
-
-    // Add method to update enqueue lines for a trike
-    updateEnqueueLines(trikeId, trikePos) {
-        this.markers.enqueueLines.forEach((lineData, passengerId) => {
-            if (lineData.trikeId === trikeId) {
-                const passengerMarker = this.getMarker('appear', passengerId);
-                if (passengerMarker) {
-                    this.updateEnqueueLine(passengerId, trikePos, passengerMarker.getLatLng());
-                }
-            }
-        });
     }
 
     // Add method to update frame counter

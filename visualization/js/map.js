@@ -51,34 +51,27 @@ function initializeSimulation() {
     // Clear existing visualization using VisualManager
     visualManager.clearAllMarkers();
 
-    // Add play/pause button
-    const controlButton = L.control({ position: 'bottomright' });
-    controlButton.onAdd = function() {
-        const div = L.DomUtil.create('div', 'leaflet-control leaflet-bar');
-        div.innerHTML = `
-            <a href="#" title="Play/Pause" style="
-                width: 30px;
-                height: 30px;
-                line-height: 30px;
-                text-align: center;
-                display: block;
-                text-decoration: none;
-                color: black;
-                background: white;
-                font-size: 18px;
-                position: relative;
-                z-index: 1001;
-                margin-bottom: 220px;
-            ">▶</a>
-        `;
-        div.onclick = function(e) {
+    // Initialize frame time slider
+    const frameTimeSlider = document.getElementById('frameTimeSlider');
+    if (frameTimeSlider) {
+        frameTimeSlider.addEventListener('input', function(e) {
+            const value = parseInt(e.target.value);
+            // Update the simulation frame time (time between simulation updates)
+            TIMING_CONFIG.simulationFrameTime = value;
+            // Keep the frame duration constant for smooth animation
+            TIMING_CONFIG.frameDuration = 16; // ~60fps for smooth animation
+        });
+    }
+
+    // Initialize play/pause button
+    const controlButton = document.querySelector('.control-button a');
+    if (controlButton) {
+        controlButton.onclick = function(e) {
             e.preventDefault();
             window.IS_PAUSED = !window.IS_PAUSED;
-            div.querySelector('a').textContent = window.IS_PAUSED ? '▶' : '⏸';
+            this.textContent = window.IS_PAUSED ? '▶' : '‖';
         };
-        return div;
-    };
-    controlButton.addTo(window.map);
+    }
 }
 
 function simulationTick() {

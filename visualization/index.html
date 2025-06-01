@@ -44,7 +44,13 @@
 </head>
 <body>
     <div id="map"></div>
-    <div id="frameCounter">Frame: 0</div>
+    <div class="frame-controls">
+        <input type="range" id="frameTimeSlider" min="16" max="200" value="50" class="frame-time-slider">
+        <div id="frameCounter">Frame: 0</div>
+        <div class="control-button">
+            <a href="#" title="Play/Pause">▶</a>
+        </div>
+    </div>
     <div class="tabbed-container">
         <div class="tab-header">
             <button class="tab-button active" data-tab="event-log">EVENT LOG</button>
