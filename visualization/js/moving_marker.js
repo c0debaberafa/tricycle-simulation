@@ -90,7 +90,7 @@ L.MovingMarker = L.Marker.extend({
         }
         
         console.log(`Initializing marker ${id} with path:`, path);
-        console.log('Path validation result:', this._validateAndProcessPath(path));
+        console.log('Events data:', events);
         
         // Only proceed with marker creation for trikes
         if (!id.startsWith("trike")) {
@@ -235,11 +235,32 @@ L.MovingMarker = L.Marker.extend({
                     // Process events for this frame
                     if (this.events && this.currentEventIndex < this.events.length) {
                         const event = this.events[this.currentEventIndex];
-                        if (event && event.frame === this.currentPathIndex) {
-                            if (window.visualManager) {
-                                window.visualManager.logEvent(this.currentPathIndex, this.id, event.type, JSON.stringify(event.data));
+                        console.log(`Checking event for ${this.id}:`, {
+                            currentFrame: this._lastSimulationFrame + i,
+                            eventTime: event?.time,
+                            eventType: event?.type,
+                            currentEventIndex: this.currentEventIndex,
+                            totalEvents: this.events.length
+                        });
+                        
+                        // Process all events that should occur at this frame
+                        while (this.currentEventIndex < this.events.length) {
+                            const currentEvent = this.events[this.currentEventIndex];
+                            if (currentEvent && currentEvent.time === this._lastSimulationFrame + i) {
+                                console.log(`Processing event for ${this.id} at time ${currentEvent.time}:`, currentEvent);
+                                if (window.visualManager) {
+                                    window.visualManager.logEvent(
+                                        currentEvent.time,
+                                        this.id,
+                                        currentEvent.type,
+                                        currentEvent.data || {}
+                                    );
+                                }
+                                this.currentEventIndex++;
+                            } else {
+                                // If we hit an event that's not for this frame, stop processing
+                                break;
                             }
-                            this.currentEventIndex++;
                         }
                     }
                     
@@ -255,12 +276,14 @@ L.MovingMarker = L.Marker.extend({
             this._lastSimulationFrame = currentSimulationFrame;
             
             // Debug logging
+            /*
             console.log(`Simulation frame update for ${this.id}:`, {
                 frame: currentSimulationFrame,
                 currentIndex: this.currentPathIndex - 1, // Show the index we just processed
                 currentPoint: this._currentPosition,
                 pathLength: this.path.length
             });
+            */
         }
         
         // Continue animation

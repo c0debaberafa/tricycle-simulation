@@ -341,6 +341,11 @@ export class VisualManager {
 
     // Add event logging functionality
     logEvent(time, id, type, data) {
+        // Skip logging MOVE events
+        if (type === 'MOVE' || type === "WAIT") {
+            return;
+        }
+
         const eventLog = document.getElementById('eventLog');
         if (!eventLog) return;
 
@@ -372,29 +377,51 @@ export class VisualManager {
                 message += '⏳ ENQUEUE';
                 break;
             case 'MOVE':
-                message += `🚶 MOVE (${data} frames)`;
+                message += `🚶 MOVE`;
                 break;
             case 'LOAD':
-                message += `⬆️ LOAD ${data}`;
+                message += `⬆️ LOAD`;
+                if (data && typeof data === 'string') {
+                    message += ` ${data}`;
+                }
                 break;
             case 'WAIT':
-                message += `⏸️ WAIT (${data} frames)`;
+                message += `⏸️ WAIT`;
+                if (data && typeof data === 'number') {
+                    message += ` (${data} frames)`;
+                }
                 break;
             case 'DROP-OFF':
-                message += `⬇️ DROP-OFF ${data}`;
+                message += `⬇️ DROP-OFF`;
+                if (data && typeof data === 'string') {
+                    message += ` ${data}`;
+                }
                 break;
             default:
                 message += type;
         }
         
         // Add location data if available
-        if (data && typeof data === 'object' && data.location) {
-            message += ` at [${data.location[0].toFixed(6)}, ${data.location[1].toFixed(6)}]`;
+        if (data && typeof data === 'object') {
+            if (data.location && Array.isArray(data.location)) {
+                message += ` at [${data.location[0].toFixed(6)}, ${data.location[1].toFixed(6)}]`;
+            } else if (data.coordinates && Array.isArray(data.coordinates)) {
+                message += ` at [${data.coordinates[0].toFixed(6)}, ${data.coordinates[1].toFixed(6)}]`;
+            }
         }
         
         entry.textContent = message;
         eventLog.appendChild(entry);
         eventLog.scrollTop = eventLog.scrollHeight;
+        
+        // Debug logging
+        console.log('Logged event:', {
+            time,
+            id,
+            type,
+            data,
+            message
+        });
     }
 
     // Add method to create event marker

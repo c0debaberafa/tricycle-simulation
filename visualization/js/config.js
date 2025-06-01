@@ -22,7 +22,7 @@ export const MAP_CONFIG = {
 
 // API endpoints
 export const API_ENDPOINTS = {
-    simulation: (id, t, p) => `http://localhost:5052/real/${id}/${t}/${p}`,
+    simulation: (id, t, p) => `http://localhost:5050/real/${id}/${t}/${p}`,
     terminals: (id) => `http://localhost:5052/real/${id}/terminals.json`
 };
 
