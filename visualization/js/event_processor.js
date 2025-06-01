@@ -289,19 +289,10 @@ export class EventProcessor {
             }
         });
 
-        // Combine passenger interaction handlers
-        this.registerHandler('PROCESS_PASSENGER_INTERACTION', (event) => {
-            const { type, marker, event: markerEvent } = event;
-            
-            switch (type) {
-                case 'APPEAR':
-                    this.handleAppearEvent(marker, markerEvent, event.timestamp);
-                    break;
-                    
-                case 'PASSENGER_EVENT':
-                    this.handlePassengerEvent(marker, markerEvent);
-                    break;
-            }
+        // Process trike events
+        this.registerHandler('PROCESS_TRIKE_EVENT', (event) => {
+            const { marker, event: markerEvent } = event;
+            this.handleEvent(marker, markerEvent);
         });
 
         // Add handler for event timing
@@ -380,10 +371,10 @@ export class EventProcessor {
         }
     }
 
-    handlePassengerEvent(marker, event) {
-        // Skip passenger events for passenger appear markers
-        if (marker.id.startsWith("passenger")) {
-            console.log('Skipping passenger event for passenger marker:', marker.id);
+    handleEvent(marker, event) {
+        // Only process events for trikes
+        if (!marker.id.startsWith("trike")) {
+            console.log('Skipping event for non-trike marker:', marker.id);
             return;
         }
 
@@ -391,46 +382,77 @@ export class EventProcessor {
         if (eventPoint && Array.isArray(eventPoint) && eventPoint.length === 2) {
             marker.setLatLng(eventPoint);
             
-            const message = `${marker.id}: ${event.type} ${event.data || ""}`;
-            marker.createEventMarker(eventPoint[0], eventPoint[1], message);
-            marker.logEvent(event.time, event.type, event.data);
+            // Convert [lng, lat] to [lat, lng] for createEventMarker
+            const latLng = [eventPoint[1], eventPoint[0]];
+            
+            switch (event.type) {
+                case "LOAD":
+                    // Create load event marker
+                    const newLoadMarker = this.visualManager.createEventMarker(latLng[0], latLng[1], `${event.data}: ${event.type}`, event.data);
+                    if (newLoadMarker) {
+                        this.visualManager.addMarker('load', event.data, newLoadMarker);
+                    }
+                    
+                    // Update passenger state
+                    marker.passengers.add(event.data);
+                    // Remove the appear marker for this passenger
+                    const appearMarker = this.visualManager.markers.appear.get(event.data);
+                    if (appearMarker) {
+                        console.log('Removing appear marker for passenger:', event.data);
+                        appearMarker.remove();
+                        this.visualManager.markers.appear.delete(event.data);
+                    } else {
+                        console.log('No appear marker found for passenger:', event.data);
+                    }
+                    this.processEvent({
+                        type: 'UPDATE_PASSENGER',
+                        passengerId: event.data,
+                        newState: 'ONBOARD',
+                        trikeId: marker.id,
+                        passengers: marker.passengers
+                    });
+                    break;
 
-            if (marker.id.startsWith("trike")) {
-                switch (event.type) {
-                    case "DROP-OFF":
-                        marker.passengers.delete(event.data);
-                        this.processEvent({
-                            type: 'UPDATE_PASSENGER',
-                            passengerId: event.data,
-                            newState: 'COMPLETED',
-                            trikeId: marker.id,
-                            passengers: marker.passengers
-                        });
-                        break;
-                    case "LOAD":
-                        marker.passengers.add(event.data);
-                        this.processEvent({
-                            type: 'UPDATE_PASSENGER',
-                            passengerId: event.data,
-                            newState: 'ONBOARD',
-                            trikeId: marker.id,
-                            passengers: marker.passengers
-                        });
-                        break;
-                    case "ENQUEUE":
-                        this.processEvent({
-                            type: 'UPDATE_PASSENGER',
-                            passengerId: event.data,
-                            newState: 'ENQUEUED',
-                            trikeId: marker.id,
-                            passengers: marker.passengers
-                        });
-                        break;
-                }
+                case "DROP-OFF":
+                    // Create drop-off event marker
+                    const dropoffMarker = this.visualManager.createEventMarker(latLng[0], latLng[1], `${event.data}: ${event.type}`, event.data);
+                    if (dropoffMarker) {
+                        this.visualManager.addMarker('dropoff', event.data, dropoffMarker);
+                    }
+                    
+                    // Remove the load marker for this passenger
+                    const existingLoadMarker = this.visualManager.markers.load.get(event.data);
+                    if (existingLoadMarker) {
+                        console.log('Removing load marker for passenger:', event.data);
+                        existingLoadMarker.remove();
+                        this.visualManager.markers.load.delete(event.data);
+                    } else {
+                        console.log('No load marker found for passenger:', event.data);
+                    }
+                    
+                    // Update passenger state
+                    marker.passengers.delete(event.data);
+                    this.processEvent({
+                        type: 'UPDATE_PASSENGER',
+                        passengerId: event.data,
+                        newState: 'COMPLETED',
+                        trikeId: marker.id,
+                        passengers: marker.passengers
+                    });
+                    break;
+
+                case "ENQUEUE":
+                    this.processEvent({
+                        type: 'UPDATE_PASSENGER',
+                        passengerId: event.data,
+                        newState: 'ENQUEUED',
+                        trikeId: marker.id,
+                        passengers: marker.passengers
+                    });
+                    break;
             }
             
-            marker._prevTimeStamp = timestamp;
-            marker.currentEventIndex += 1;
+            marker.currentEventIndex++;
         }
     }
 
@@ -469,7 +491,89 @@ export class EventProcessor {
             console.warn(`No handler registered for event type: ${event.type}`);
         }
     }
+
+    // Add method to check and process trike events every frame
+    checkTrikeEvents(timestamp) {
+        console.log('checkTrikeEvents called with timestamp:', timestamp);
+        
+        // Get all trike markers
+        const trikeMarkers = Array.from(this.visualManager.markers.trike.values());
+        console.log('Found trike markers:', trikeMarkers.length);
+        
+        trikeMarkers.forEach(marker => {
+            console.log('Checking events for trike:', marker.id);
+            if (!marker.events || !Array.isArray(marker.events)) {
+                console.log('No events array for trike:', marker.id);
+                return;
+            }
+            
+            console.log('Events for trike:', marker.id, marker.events);
+            console.log('Current event index:', marker.currentEventIndex);
+            
+            // Check all events that should occur at this timestamp
+            while (marker.currentEventIndex < marker.events.length) {
+                const event = marker.events[marker.currentEventIndex];
+                if (!event) {
+                    console.warn(`Invalid event at index ${marker.currentEventIndex} for marker ${marker.id}`);
+                    marker.currentEventIndex++;
+                    continue;
+                }
+
+                console.log('Checking event:', event);
+                console.log('Event time:', event.time, 'Current timestamp:', timestamp);
+
+                // Check if this event should be processed at this timestamp
+                if (event.time === timestamp) {
+                    console.log(`Processing event for ${marker.id} at time ${timestamp}:`, event);
+                    
+                    // For LOAD and DROP-OFF events, log with passenger ID
+                    if (event.type === "LOAD" || event.type === "DROP-OFF") {
+                        console.log('Logging LOAD/DROP-OFF event with passenger ID:', event.data);
+                        // Log the event with passenger ID
+                        this.visualManager.logEvent(
+                            timestamp,
+                            event.data,  // Use passenger ID
+                            event.type,
+                            marker.id    // Use trike ID as data
+                        );
+                    } else if (event.type === "APPEAR") {
+                        console.log('Logging APPEAR event for:', marker.id);
+                        // Log appear events with the entity's ID
+                        this.visualManager.logEvent(
+                            timestamp,
+                            marker.id,
+                            event.type,
+                            event.data
+                        );
+                    } else if (event.type !== "MOVE" && event.type !== "WAIT") {
+                        console.log('Logging other event:', event.type, 'for trike:', marker.id);
+                        // Log other events (except MOVE and WAIT) with trike ID
+                        this.visualManager.logEvent(
+                            timestamp,
+                            marker.id,
+                            event.type,
+                            event.data
+                        );
+                    }
+
+                    // Then handle the event
+                    this.handleEvent(marker, event);
+                } else if (event.time > timestamp) {
+                    console.log('Event time is in the future, stopping processing');
+                    // If we hit an event that's not for this frame, stop processing
+                    break;
+                } else {
+                    console.log('Skipping past event');
+                    // Skip past events
+                    marker.currentEventIndex++;
+                }
+            }
+        });
+    }
 }
 
 // Create and export the event processor instance
-export const eventProcessor = new EventProcessor(); 
+export const eventProcessor = new EventProcessor();
+
+// Make event processor available globally
+window.eventProcessor = eventProcessor; 

@@ -507,20 +507,23 @@ export class VisualManager {
             offset: [0, -offset]
         });
 
-        // Store marker in appropriate map
-        if (isPassengerAppear) {
+        // Handle load and drop-off events
+        if (isLoad || isDropoff) {
+            const match = message.match(/passenger_\d+/);
+            if (match) {
+                const passengerId = match[0];
+                // Remove the appear marker for this passenger
+                const appearMarker = this.markers.appear.get(passengerId);
+                if (appearMarker) {
+                    appearMarker.remove();
+                    this.markers.appear.delete(passengerId);
+                }
+                // Store the new marker
+                this.addMarker(isLoad ? 'load' : 'dropoff', passengerId, marker);
+            }
+        } else if (isPassengerAppear) {
             console.log('Adding passenger appear marker to appear map');
             this.addMarker('appear', id, marker);
-        } else if (isLoad) {
-            const match = message.match(/passenger_\d+/);
-            if (match) {
-                this.addMarker('load', match[0], marker);
-            }
-        } else if (isDropoff) {
-            const match = message.match(/passenger_\d+/);
-            if (match) {
-                this.addMarker('dropoff', match[0], marker);
-            }
         }
 
         return marker;

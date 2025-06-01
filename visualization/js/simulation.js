@@ -57,6 +57,11 @@ function simulationTick() {
         marker.setSimTime(window.GLOBAL_TIME_MS);
     });
 
+    // Check and process trike events for this frame
+    if (window.eventProcessor) {
+        window.eventProcessor.checkTrikeEvents(SIM_TIME);
+    }
+
     setTimeout(simulationTick, FRAME_DURATION_MS);
 }
 

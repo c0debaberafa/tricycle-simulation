@@ -7,7 +7,7 @@
 // Simulation timing
 export const TIMING_CONFIG = {
     frameDuration: 16,  // Target frame duration in ms (~60fps)
-    simulationFrameTime: 10,  // Time between simulation updates in ms
+    simulationFrameTime: 50,  // Time between simulation updates in ms
     baseSpeedMultiplier: 2000  // Base speed multiplier for visualization
 };
 

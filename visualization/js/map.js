@@ -41,24 +41,69 @@ function initializeSimulation() {
     stateManager.reset();
     window.GLOBAL_TIME_MS = 0;
     window.SIMULATION_SPEED = 1.0;
+    window.IS_PAUSED = false;
     
     // Make managers available globally
     window.visualManager = visualManager;
     window.stateManager = stateManager;
+    window.eventProcessor = eventProcessor;
     
     // Clear existing visualization using VisualManager
     visualManager.clearAllMarkers();
+
+    // Add play/pause button
+    const controlButton = L.control({ position: 'bottomright' });
+    controlButton.onAdd = function() {
+        const div = L.DomUtil.create('div', 'leaflet-control leaflet-bar');
+        div.innerHTML = `
+            <a href="#" title="Play/Pause" style="
+                width: 30px;
+                height: 30px;
+                line-height: 30px;
+                text-align: center;
+                display: block;
+                text-decoration: none;
+                color: black;
+                background: white;
+                font-size: 18px;
+                position: relative;
+                z-index: 1001;
+                margin-bottom: 220px;
+            ">▶</a>
+        `;
+        div.onclick = function(e) {
+            e.preventDefault();
+            window.IS_PAUSED = !window.IS_PAUSED;
+            div.querySelector('a').textContent = window.IS_PAUSED ? '▶' : '⏸';
+        };
+        return div;
+    };
+    controlButton.addTo(window.map);
 }
 
 function simulationTick() {
-    // Update simulation time
+    // Skip if paused
+    if (window.IS_PAUSED) {
+        requestAnimationFrame(() => {
+            setTimeout(simulationTick, TIMING_CONFIG.frameDuration);
+        });
+        return;
+    }
+
+    // Update simulation time and frame counter
     window.GLOBAL_TIME_MS += TIMING_CONFIG.frameDuration;
+    window.CURRENT_FRAME = Math.floor(window.GLOBAL_TIME_MS / TIMING_CONFIG.simulationFrameTime);
     
     // Get current path index from state manager
     const currentFrame = stateManager.getMaxPathIndex();
     
     // Update frame counter
     visualManager.updateFrameCounter(currentFrame);
+    
+    // Check and process trike events for this frame
+    if (window.eventProcessor) {
+        window.eventProcessor.checkTrikeEvents(currentFrame);
+    }
     
     // Use requestAnimationFrame for smoother animation
     requestAnimationFrame(() => {

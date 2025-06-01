@@ -11,7 +11,7 @@ import { TIMING_CONFIG } from './config.js';
 const MARKER_REFRESH_TIME = window.REFRESH_TIME || TIMING_CONFIG.frameDuration; // ms between updates
 
 // Constants for coordinate calculations
-const SIMULATION_FRAME_TIME = 16; // Reduced from 100ms to 50ms for faster updates
+const SIMULATION_FRAME_TIME = TIMING_CONFIG.simulationFrameTime; // Reduced from 100ms to 50ms for faster updates
 
 // Global state
 window.CURRENT_FRAME = 0;
@@ -57,19 +57,6 @@ function getEuclideanDistance(p1, p2) {
 function roundPlaces(x, places) {
     return Math.round(x * (10**places)) / (10**places);
 }
-
-// Function to update global time
-function updateGlobalTime() {
-    window.GLOBAL_TIME_MS += MARKER_REFRESH_TIME;
-    // Use SIMULATION_FRAME if available, otherwise calculate based on time
-    window.CURRENT_FRAME = window.SIMULATION_FRAME !== undefined ? 
-        window.SIMULATION_FRAME : 
-        Math.floor(window.GLOBAL_TIME_MS / SIMULATION_FRAME_TIME);
-    setTimeout(updateGlobalTime, MARKER_REFRESH_TIME);
-}
-
-// Start the time update loop
-updateGlobalTime();
 
 L.MovingMarker = L.Marker.extend({
     /**
@@ -195,7 +182,11 @@ L.MovingMarker = L.Marker.extend({
     },
 
     _animate: function() {
-        const now = performance.now();
+        // Skip animation if paused
+        if (window.IS_PAUSED) {
+            this._animationFrame = requestAnimationFrame(() => this._animate());
+            return;
+        }
         
         // Use the global frame counter
         const currentSimulationFrame = window.CURRENT_FRAME;
@@ -232,38 +223,6 @@ L.MovingMarker = L.Marker.extend({
                         window.visualManager.updateTrikePosition(this.id, leafletPosition, this.currentPathIndex);
                     }
                     
-                    // Process events for this frame
-                    if (this.events && this.currentEventIndex < this.events.length) {
-                        const event = this.events[this.currentEventIndex];
-                        console.log(`Checking event for ${this.id}:`, {
-                            currentFrame: this._lastSimulationFrame + i,
-                            eventTime: event?.time,
-                            eventType: event?.type,
-                            currentEventIndex: this.currentEventIndex,
-                            totalEvents: this.events.length
-                        });
-                        
-                        // Process all events that should occur at this frame
-                        while (this.currentEventIndex < this.events.length) {
-                            const currentEvent = this.events[this.currentEventIndex];
-                            if (currentEvent && currentEvent.time === this._lastSimulationFrame + i) {
-                                console.log(`Processing event for ${this.id} at time ${currentEvent.time}:`, currentEvent);
-                                if (window.visualManager) {
-                                    window.visualManager.logEvent(
-                                        currentEvent.time,
-                                        this.id,
-                                        currentEvent.type,
-                                        currentEvent.data || {}
-                                    );
-                                }
-                                this.currentEventIndex++;
-                            } else {
-                                // If we hit an event that's not for this frame, stop processing
-                                break;
-                            }
-                        }
-                    }
-                    
                     // Move to next point
                     this.currentPathIndex++;
                 } else {
@@ -274,16 +233,6 @@ L.MovingMarker = L.Marker.extend({
             }
             
             this._lastSimulationFrame = currentSimulationFrame;
-            
-            // Debug logging
-            /*
-            console.log(`Simulation frame update for ${this.id}:`, {
-                frame: currentSimulationFrame,
-                currentIndex: this.currentPathIndex - 1, // Show the index we just processed
-                currentPoint: this._currentPosition,
-                pathLength: this.path.length
-            });
-            */
         }
         
         // Continue animation
