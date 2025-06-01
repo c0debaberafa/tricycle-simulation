@@ -41,13 +41,10 @@
         crossorigin="anonymous" 
         referrerpolicy="no-referrer" 
     />
-
-    <!-- Load scripts in correct order with defer -->
-    <script src="js/map.js" defer></script>
-    <script src="js/moving_marker.js" defer></script>
 </head>
 <body>
     <div id="map"></div>
+    <div id="frameCounter">Frame: 0</div>
     <div class="tabbed-container">
         <div class="tab-header">
             <button class="tab-button active" data-tab="event-log">EVENT LOG</button>
@@ -70,5 +67,18 @@
             </div>
         </div>
     </div>
+
+    <!-- Initialize map first -->
+    <script type="module">
+        import { initializeMap } from './js/map.js';
+        window.map = initializeMap();
+    </script>
+
+    <!-- Load other scripts after map is initialized -->
+    <script src="js/config.js" type="module"></script>
+    <script src="js/managers.js" type="module"></script>
+    <script src="js/event_processor.js" type="module"></script>
+    <script src="js/moving_marker.js" type="module"></script>
+    <script src="js/map.js" type="module"></script>
 </body>
 </html>

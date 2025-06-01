@@ -48,6 +48,7 @@ function haversine(lat1, lon1, lat2, lon2) {
 function simulationTick() {
     SIM_TIME += 1; // Increment frame counter
     window.GLOBAL_TIME_MS += FRAME_DURATION_MS;
+    window.SIMULATION_FRAME = SIM_TIME; // Set the global simulation frame
     
     console.log(`Simulation tick - Frame: ${SIM_TIME}`);
 

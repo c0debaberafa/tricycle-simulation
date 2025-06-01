@@ -798,7 +798,7 @@ class Tricycle(Actor):
 
     def tryLoad(self, current_time: int):
         """
-        Attempts to load enqueued passengers within pickup radius.
+        Attempts to load enqueued passengers at their exact spawn location.
         
         Args:
             current_time: Current simulation time
@@ -809,7 +809,7 @@ class Tricycle(Actor):
         Note:
             - Only loads ENQUEUED passengers claimed by this tricycle
             - Resets passengers if loading fails
-            - Uses haversine distance for realistic pickup
+            - Uses exact location matching for pickup
             - Schedules next passenger's destination after successful load
         """
         if not self.map:
@@ -818,7 +818,7 @@ class Tricycle(Actor):
         cur = self.path[-1]
         
         # Get nearby passengers using the new Map method
-        nearby_passengers = self.map.getNearbyPassengers(cur, PICKUP_RADIUS_METERS)
+        nearby_passengers = self.map.getNearbyPassengers(cur, DETECTION_RADIUS_METERS)
         
         loaded = []
         for p in nearby_passengers:
@@ -830,11 +830,8 @@ class Tricycle(Actor):
                 print(f"Passenger {p.id} claimed by {p.claimed_by}, not {self.id}", flush=True)
                 continue
                 
-            # Calculate distance to passenger
-            distance = util.haversine(*cur.toTuple(), *p.src.toTuple())
-            print(f"Tricycle {self.id} is {distance:.2f}m away from passenger {p.id}", flush=True)
-                
-            if distance <= PICKUP_RADIUS_METERS:
+            # Check if we're exactly at the passenger's spawn location
+            if self.map.isAtLocation(cur, p.src):
                 if len(self.passengers) >= self.capacity:
                     print(f"Tricycle {self.id} at capacity ({len(self.passengers)}/{self.capacity})", flush=True)
                     # If we can't load the passenger (e.g., capacity reached),
@@ -846,7 +843,7 @@ class Tricycle(Actor):
                 if self.loadPassenger(p, current_time):
                     loaded.append(p)
                     self.map.removePassenger(p)
-                    print(f"Loaded {p.id} into {self.id} at distance {distance:.2f}m", flush=True)
+                    print(f"Loaded {p.id} into {self.id} at exact spawn location", flush=True)
                     
                     # Add a small wait after loading to ensure stability
                     self.events.append({
@@ -869,7 +866,7 @@ class Tricycle(Actor):
                     print(f"Could not load {p.id} into {self.id}, resetting status to WAITING", flush=True)
                     p.onReset(current_time, [p.src.x, p.src.y])
             else:
-                print(f"Passenger {p.id} is too far ({distance:.2f}m) for pickup by {self.id}", flush=True)
+                print(f"Tricycle {self.id} is not at {p.id}'s exact spawn location", flush=True)
         
         return loaded
 

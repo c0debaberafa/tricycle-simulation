@@ -469,9 +469,8 @@ class Simulator:
                                 # 2. It's in a state where it can be picked up by a terminal
                                 is_at_terminal = (
                                     map.isAtLocation(terminal.location, trike.curPoint()) and 
-                                    trike.status in [TricycleStatus.IDLE, TricycleStatus.RETURNING_TO_TERMINAL]
+                                    trike.status in [TricycleStatus.IDLE, TricycleStatus.RETURNING]
                                 )
-                                
                                 if is_at_terminal:
                                     print("------Tricycle parked in terminal", trike.id, terminal.location.toTuple(), flush=True)
                                     terminal.addTricycle(trike)
@@ -522,6 +521,12 @@ class Simulator:
 
         while cur_time[0] < maxTime:
             process_frame()
+            
+            # Check if all passengers have completed their trips
+            all_passengers_completed = all(passenger.status == PassengerStatus.COMPLETED for passenger in passengers)
+            if all_passengers_completed:
+                print("All passengers have completed their trips. Ending simulation early.", flush=True)
+                break
 
         end_time = time.time()
         elapsed_time = end_time - start_time

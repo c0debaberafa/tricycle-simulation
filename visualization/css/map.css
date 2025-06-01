@@ -70,12 +70,47 @@
 
 .event-log-entry {
     margin: 2px 0;
-    padding: 2px 5px;
+    padding: 4px 8px;
     border-bottom: 1px solid #444;
+    font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', monospace;
+    font-size: 12px;
+    line-height: 1.4;
+    color: #e0e0e0;
+    transition: background-color 0.2s ease;
+    border-left: 3px solid transparent;
 }
 
 .event-log-entry:hover {
-    background: #222;
+    background: #2a2a2a;
+}
+
+/* Color coding for different event types */
+.event-log-entry[data-event-type="APPEAR"] {
+    border-left-color: #4CAF50;
+}
+
+.event-log-entry[data-event-type="MOVE"] {
+    border-left-color: #2196F3;
+}
+
+.event-log-entry[data-event-type="LOAD"] {
+    border-left-color: #FF9800;
+}
+
+.event-log-entry[data-event-type="DROP-OFF"] {
+    border-left-color: #9C27B0;
+}
+
+.event-log-entry[data-event-type="WAIT"] {
+    border-left-color: #FFC107;
+}
+
+.event-log-entry[data-event-type="ENQUEUE"] {
+    border-left-color: #F44336;
+}
+
+.event-log-entry[data-event-type="NEW_ROAM_PATH"] {
+    border-left-color: #00BCD4;
 }
 
 #passengerStatus {
@@ -166,4 +201,17 @@
 
 .log-message {
     flex-grow: 1;
+}
+
+#frameCounter {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    background-color: rgba(0, 0, 0, 0.7);
+    color: white;
+    padding: 5px 10px;
+    border-radius: 4px;
+    z-index: 1000;
+    font-family: monospace;
+    font-size: 14px;
 }

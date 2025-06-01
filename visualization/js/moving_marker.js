@@ -1,648 +1,387 @@
 /**
+ * Moving Marker Implementation for Leaflet
+ * 
+ * This module extends Leaflet's Marker class to support animated movement
+ * along paths with visual management integration.
+ */
+
+import { TIMING_CONFIG } from './config.js';
+
+// Use the REFRESH_TIME from managers.js if available, otherwise define it
+const MARKER_REFRESH_TIME = window.REFRESH_TIME || TIMING_CONFIG.frameDuration; // ms between updates
+
+// Constants for coordinate calculations
+const SIMULATION_FRAME_TIME = 16; // Reduced from 100ms to 50ms for faster updates
+
+// Global state
+window.CURRENT_FRAME = 0;
+window.GLOBAL_TIME_MS = 0;
+window.SIMULATION_SPEED = 1; // Base simulation speed multiplier
+window.INITIALIZED_TRIKES = new Set();
+
+/**
+ * Utility Functions
+ */
+
+/**
  * Returns the point between the source point and the destination point at
  * the percentage part of the segment connecting them.
  * 
- * Example:
- * interpolate((0,0), (0,1), 0.25) --> (0,0.25)
- * 
- * @param {point} Source Point
- * @param {point} Destination Point
- * @param {float (in range [0, 1])} Percentage travelled 
- * @returns {point}
+ * @param {[number, number]} p1 Source Point [lng, lat] (OSRM format)
+ * @param {[number, number]} p2 Destination Point [lng, lat] (OSRM format)
+ * @param {number} prog Percentage travelled (0-1)
+ * @returns {[number, number]} Interpolated point [lng, lat] (OSRM format)
  */
 function interpolatePosition(p1, p2, prog) {
-    return [p1[0] + prog * (p2[0] - p1[0]), p1[1] + prog * (p2[1] - p1[1])]
+    return [p1[0] + prog * (p2[0] - p1[0]), p1[1] + prog * (p2[1] - p1[1])];
 }
 
 /**
- * Computes the euclidean distance between two points.
+ * Computes the euclidean distance between two points in degrees.
  * 
- * @param {point} Point 1 
- * @param {point} Point 2
- * @returns {float} Euclidean Distance
+ * @param {[number, number]} p1 Point 1 [lng, lat] (OSRM format)
+ * @param {[number, number]} p2 Point 2 [lng, lat] (OSRM format)
+ * @returns {number} Distance in degrees
  */
 function getEuclideanDistance(p1, p2) {
     return Math.sqrt((p1[0] - p2[0]) ** 2 + (p1[1] - p2[1]) ** 2);
 }
 
+/**
+ * Rounds a number to specified decimal places
+ * 
+ * @param {number} x Number to round
+ * @param {number} places Number of decimal places
+ * @returns {number} Rounded number
+ */
 function roundPlaces(x, places) {
     return Math.round(x * (10**places)) / (10**places);
 }
 
-const REFRESH_TIME = 16.67;  // 60 FPS for smoother animation
-// Make GLOBAL_TIME_MS available globally
-window.GLOBAL_TIME_MS = window.GLOBAL_TIME_MS || 0;
-
-// Global Maps for storing different types of markers
-window.appearMarkers = new Map();  // Store passenger appear markers
-window.loadMarkers = new Map();    // Store load markers
-window.dropoffMarkers = new Map(); // Store dropoff markers
-window.enqueueLines = new Map();   // Store lines connecting trikes to enqueued passengers
-// Format: Map<passengerId, {trikeId: string, line: L.Polyline}>
-
-// Global frame counter
-window.CURRENT_FRAME = 0;
-
-function update_time() {
-    window.GLOBAL_TIME_MS += REFRESH_TIME;
-    setTimeout(update_time, REFRESH_TIME);
+// Function to update global time
+function updateGlobalTime() {
+    window.GLOBAL_TIME_MS += MARKER_REFRESH_TIME;
+    // Use SIMULATION_FRAME if available, otherwise calculate based on time
+    window.CURRENT_FRAME = window.SIMULATION_FRAME !== undefined ? 
+        window.SIMULATION_FRAME : 
+        Math.floor(window.GLOBAL_TIME_MS / SIMULATION_FRAME_TIME);
+    setTimeout(updateGlobalTime, MARKER_REFRESH_TIME);
 }
 
 // Start the time update loop
-update_time();
+updateGlobalTime();
 
-L.Marker.MovingMarker = L.Marker.extend({
-
-    statics: {
-        notStartedState: 0,
-        runningState: 1,
-        pausedState: 2,
-        endedState: 3
-    },
-
+L.MovingMarker = L.Marker.extend({
+    /**
+     * Initialize a new moving marker
+     * 
+     * @param {string} id Unique identifier for the marker
+     * @param {Array} path Array of coordinates defining the marker's path
+     * @param {number} stime Start time of the animation
+     * @param {number} dtime Duration of the animation
+     * @param {number} speed Speed of movement
+     * @param {Array} events Array of events to process during animation
+     */
     initialize: function (id, path, stime, dtime, speed, events) {
+        // Check if this trike is already initialized
+        if (window.INITIALIZED_TRIKES.has(id)) {
+            console.log(`Trike ${id} already initialized, skipping`);
+            return;
+        }
+        
         console.log(`Initializing marker ${id} with path:`, path);
+        console.log('Path validation result:', this._validateAndProcessPath(path));
+        
+        // Only proceed with marker creation for trikes
+        if (!id.startsWith("trike")) {
+            console.log(`Skipping marker creation for non-trike ${id}`);
+            return;
+        }
+
+        // Initialize properties
         this.id = id;
-        this.SPEED = speed;
-        this.path = path;
+        this.speed = speed;
+        this.path = this._validateAndProcessPath(path);
         this.stime = stime;
         this.dtime = dtime;
         this.events = events;
-        this.eventMarkers = []; // Store references to event markers
-        this.passengers = new Set(); // Track current passengers
+        this.passengers = new Set();
         this.currentPathIndex = 0;
         this.currentEventIndex = 0;
+        this.status = 0; // Default status (IDLE)
+        this._startTime = 0;
+        this._animationFrame = null;
+        this._currentPosition = null;
+        this._isAnimating = false;
+        this._lastSimulationFrame = -1; // Initialize frame tracking
 
-        // Only create and add the base marker for tricycles
-        if (!this.id.startsWith("passenger")) {
-            // Create a hollow circle marker for tricycles
-            const markerIcon = L.divIcon({
-                className: 'trike-marker',
-                html: `<div style="
-                    width: 12px;
-                    height: 12px;
-                    border-radius: 50%;
-                    border: 4px solid #0000FF;
-                    background-color: transparent;
-                "></div>`
-            });
-
-            if (this.events == null) {
-                console.log(`Creating base marker for ${this.id} at path[0]:`, path[0]);
-                L.Marker.prototype.initialize.call(this, path[0], { icon: markerIcon });
-                this.setLatLng(path[0]);
-            } else {
-                console.log(`Creating base marker for ${this.id} at [0,0]`);
-                L.Marker.prototype.initialize.call(this, [0,0], { icon: markerIcon });
-                this.setLatLng([0,0]);
-            }
-            console.log(`Adding marker ${this.id} to map`);
-            this.addTo(map);
-
-            // add the tooltip with initial passenger state
-            this.updateTooltip();
-        }
-        
-        // simulation specific
-        this.simulationState = L.Marker.MovingMarker.notStartedState;
-        this._animId = 0; 
-        this._startTimeStamp = 0;
-        this._prevTimeStamp = 0;
-        this._animRequested = false;
-
-        // sample specific
-        this._currentPathIndex = 0;
-        this._currentEventIndex = 0;
-    },
-
-    isRunning: function() {
-        return this.simulationState === L.Marker.MovingMarker.runningState;
-    },
-
-    start: function() {
-        this._startAnimation();
-    },
-
-    onAdd: function (map) {
-        L.Marker.prototype.onAdd.call(this, map);
-
-        if (this.isRunning()) {
-            this._resumeAnimation();
-        }
-    },
-
-    onRemove: function(map) {
-        L.Marker.prototype.onRemove.call(this, map);
-        this._stopAnimation();
-    },
-
-    _startAnimation: function() {
-        this.simulationState = L.Marker.MovingMarker.runningState;
-        this._animId = L.Util.requestAnimFrame(function(_timestamp) {
-            const timestamp = GLOBAL_TIME_MS;
-            this._startTimeStamp = timestamp;
-            this._prevTimeStamp = timestamp;
-            this._animate(timestamp);
-        }, this, true);
-        this._animRequested = true;
-    },
-
-    _resumeAnimation: function() {
-        if (!this._animRequested) {
-            this._animRequested = true;
-            this._animId = L.Util.requestAnimFrame(function(_timestamp) {
-                const timestamp = GLOBAL_TIME_MS;
-                this._animate(timestamp);
-            }, this, true);
-        }
-    },
-
-    _stopAnimation: function() {
-        if (this._animRequested) {
-            L.Util.cancelAnimFrame(this._animId);
-            this._animRequested = false;
-        }
-    },
-
-    // Add new method to create event markers
-    createEventMarker: function(lat, lng, message) {
-        // Skip creating markers for enqueue events and trike appear events
-        if (message.includes("ENQUEUE") || (message.includes("APPEAR") && this.id.startsWith("trike"))) {
-            return null;
-        }
-
-        const key = `${lat.toFixed(6)},${lng.toFixed(6)}`;
-        if (!window.tooltipStackCounter) window.tooltipStackCounter = {};
-        if (!window.tooltipStackCounter[key]) window.tooltipStackCounter[key] = 0;
-        const offset = window.tooltipStackCounter[key] * 24; // 24px per stacked tooltip
-        window.tooltipStackCounter[key] += 1;
-
-        // Determine marker color based on event type
-        const isLoad = message.includes("LOAD");
-        const isDropoff = message.includes("DROP-OFF");
-        const isPassengerAppear = message.includes("APPEAR") && this.id.startsWith("passenger");
-        const isTrikeAppear = message.includes("APPEAR") && this.id.startsWith("trike");
-        const isEnqueue = message.includes("ENQUEUE") && this.id.startsWith("passenger");
-        const isReset = message.includes("RESET") && this.id.startsWith("passenger");
-
-        console.log(`Creating marker for ${message} - isEnqueue: ${isEnqueue}, isReset: ${isReset}`);
-
-        let markerColor;
-        if (isPassengerAppear) {
-            markerColor = 'red';
-        } else if (isTrikeAppear) {
-            markerColor = 'blue';
-        } else if (isEnqueue) {
-            markerColor = 'orange';
-        } else if (isReset) {
-            markerColor = 'red';
-        } else if (isLoad) {
-            markerColor = 'orange';
-        } else if (isDropoff) {
-            markerColor = 'green';
+        // Initialize base marker with custom icon
+        if (this.path.length > 0) {
+            // Convert OSRM [lng, lat] to Leaflet [lat, lng] for initial position
+            const initialPos = [this.path[0][1], this.path[0][0]];
+            console.log(`Initializing base marker ${id} at position:`, initialPos);
+            L.Marker.prototype.initialize.call(this, initialPos);
+            this._initializeMarker();
+            this._currentPosition = this.path[0]; // Store in OSRM format
+            
+            // Mark as initialized
+            window.INITIALIZED_TRIKES.add(id);
         } else {
-            markerColor = 'gray';
+            console.error(`No valid path points for marker ${id} initialization`);
         }
-        
-        const marker = L.marker([lat, lng], {
-            icon: L.divIcon({
-                className: 'event-marker',
-                html: `<div style="background-color: ${markerColor}; width: 8px; height: 8px; border-radius: 50%;"></div>`,
-                iconSize: [8, 8],
-                iconAnchor: [4, 4]  // Center the icon
-            })
-        })
-        .addTo(map)
-        .bindTooltip(message, {
-            permanent: false, // Only show on hover
-            direction: 'top',
-            className: 'event-tooltip-stacked',
-            offset: [0, -offset]
-        });
-        
-        this.eventMarkers.push(marker);
+    },
 
-        // Store markers in appropriate global Maps
-        if (isPassengerAppear) {
-            const passengerId = this.id;
-            console.log(`Storing appear marker for ${passengerId}`);
-            window.appearMarkers.set(passengerId, marker);
-        } else if (isLoad) {
-            const match = message.match(/passenger_\d+/);
-            if (match) {
-                const passengerId = match[0];
-                console.log(`Storing load marker for ${passengerId}`);
-                window.loadMarkers.set(passengerId, marker);
+    _validateAndProcessPath: function(path) {
+        if (!Array.isArray(path) || path.length === 0) {
+            console.error(`Invalid path for marker ${this.id}:`, path);
+            return [];
+        }
+
+        return path.map((coord, index) => {
+            let lng, lat;
+            
+            if (Array.isArray(coord)) {
+                // Path should already be in [lng, lat] format from event processor
+                [lng, lat] = coord;
+            } else if (coord?.type === 'point' && Array.isArray(coord.data)) {
+                // OSRM point format
+                [lng, lat] = coord.data;
             } else {
-                console.warn(`Could not extract passenger ID from message: ${message}`);
+                console.error(`Invalid coordinate format at index ${index} for marker ${this.id}:`, coord);
+                return null;
             }
-        } else if (isDropoff) {
-            const match = message.match(/passenger_\d+/);
-            if (match) {
-                const passengerId = match[0];
-                console.log(`Storing dropoff marker for ${passengerId}`);
-                window.dropoffMarkers.set(passengerId, marker);
-            } else {
-                console.warn(`Could not extract passenger ID from message: ${message}`);
+
+            if (typeof lat !== 'number' || typeof lng !== 'number' || isNaN(lat) || isNaN(lng)) {
+                console.error(`Invalid coordinate values at index ${index} for marker ${this.id}:`, coord);
+                return null;
             }
-        }
 
-        return marker;
+            // Keep coordinates in OSRM format [lng, lat]
+            return [lng, lat];
+        }).filter(coord => coord !== null);
     },
 
-    // Add method to log events
-    logEvent: function(time, type, data) {
-        const eventLog = document.getElementById('eventLog');
-        const entry = document.createElement('div');
-        entry.className = 'event-log-entry';
-        
-        // Format the event message
-        let message = `Frame ${time}: ${this.id} ${type}`;
-        if (data) {
-            message += ` ${data}`;
-        }
-        
-        entry.textContent = message;
-        eventLog.appendChild(entry);
-        eventLog.scrollTop = eventLog.scrollHeight;
-    },
-
-    // Add method to update tooltip with current passenger list
-    updateTooltip: function() {
-        const passengerList = Array.from(this.passengers).sort((a, b) => {
-            // Extract numbers from passenger IDs for proper sorting
-            const numA = parseInt(a.split('_')[1]);
-            const numB = parseInt(b.split('_')[1]);
-            return numA - numB;
-        }).join(' ');
-        this.unbindTooltip();
-        this.bindTooltip(`${this.id}: ${passengerList}`, {
-            permanent: false,
-            direction: 'top'
-        });
-    },
-
-    // Add method to update marker color based on status
-    updateMarkerColor: function(status) {
-        if (this.id.startsWith("passenger")) return; // Only update tricycle markers
-
-        let color;
-        switch(status) {
-            case 0: // IDLE
-            case 3: // ROAMING
-            case 4: // RETURNING
-            case 2: // TERMINAL
-                color = 'blue'; // Blue
-                break;
-            case 1: // SERVING
-                color = 'orange'; // Orange
-                break;
-            case 5: // ENQUEUING
-                color = 'red'; // Red
-                break;
-            default:
-                color = 'blue'; // Default to blue
-        }
-
+    _initializeMarker: function() {
+        // Create marker with custom icon
         const markerIcon = L.divIcon({
             className: 'trike-marker',
             html: `<div style="
                 width: 12px;
                 height: 12px;
                 border-radius: 50%;
-                border: 4px solid ${color};
+                border: 4px solid #0000FF;
                 background-color: transparent;
             "></div>`
         });
-
         this.setIcon(markerIcon);
-    },
 
-    // Add method to create roam path visualization
-    createRoamPath: function(path) {
-        // Remove any existing roam path for this trike
-        if (this.roamPath) {
-            this.roamPath.line.remove();
-            this.roamPath.startMarker.remove();
-            this.roamPath.endMarker.remove();
+        // Add to visual manager
+        if (window.visualManager) {
+            window.visualManager.addMarker('trike', this.id, this);
         }
-
-        // Create start and end markers
-        const startMarker = L.marker(path[0], {
-            icon: L.divIcon({
-                className: 'roam-endpoint-marker',
-                html: `<div style="background-color: blue; width: 8px; height: 8px;"></div>`,
-                iconSize: [8, 8],
-                iconAnchor: [4, 4]
-            })
-        }).addTo(map);
-
-        const endMarker = L.marker(path[path.length - 1], {
-            icon: L.divIcon({
-                className: 'roam-endpoint-marker',
-                html: `<div style="background-color: blue; width: 8px; height: 8px;"></div>`,
-                iconSize: [8, 8],
-                iconAnchor: [4, 4]
-            })
-        }).addTo(map);
-
-        // Create the path line
-        const line = L.polyline(path, {
-            color: 'blue',
-            weight: 2,
-            opacity: 0.25
-        }).addTo(map);
-
-        // Store the roam path elements
-        this.roamPath = {
-            line: line,
-            startMarker: startMarker,
-            endMarker: endMarker
-        };
     },
 
-    _animate: function(_timestamp, noRequestAnim) {
-        this._animRequested = false;
-        const timestamp = GLOBAL_TIME_MS;
+    _startAnimation: function() {
+        // Only start animation if not already running and properly initialized
+        if (this._isAnimating || !window.INITIALIZED_TRIKES.has(this.id)) {
+            console.log(`Cannot start animation for ${this.id}: ${this._isAnimating ? 'already running' : 'not initialized'}`);
+            return;
+        }
+        
+        console.log(`Starting animation for ${this.id} with path length ${this.path.length}`);
+        this._isAnimating = true;
+        this._startTime = window.GLOBAL_TIME_MS;
+        this._animate();
+    },
 
-        if (this.stime + this._startTimeStamp <= timestamp) {
-            const continueAnim = (this.dtime + this._startTimeStamp) >= timestamp;
+    _animate: function() {
+        const now = performance.now();
+        
+        // Use the global frame counter
+        const currentSimulationFrame = window.CURRENT_FRAME;
+        
+        // Only process new simulation frames and ensure we don't skip frames
+        if (currentSimulationFrame > this._lastSimulationFrame) {
+            // Calculate how many frames we need to process
+            const framesToProcess = currentSimulationFrame - this._lastSimulationFrame;
             
-            if (!continueAnim) {
-                console.log(timestamp-this._startTimeStamp, "stopping", this.id);
-                this.setLatLng([0,0]);
-                this._stopAnimation();
-                return;
-            }
-            
-            if (this.events != null) {
-                const curEvent = this.events[this.currentEventIndex];
-                if (curEvent.type == "APPEAR") {
-                    // For passengers, use the event location directly
-                    const location = this.id.startsWith("passenger") ? 
-                        [curEvent.location[1], curEvent.location[0]] : // Convert [x,y] to [lat,lng]
-                        this.path[0];
-                    this.setLatLng(location);
-                    this.updateTooltip();
-                    // Create event marker for APPEAR
-                    const message = `${this.id}: ${curEvent.type}`;
-                    this.createEventMarker(location[0], location[1], message);
-                    this.logEvent(Math.floor((timestamp - this._startTimeStamp) / REFRESH_TIME), curEvent.type);
-                    this.currentEventIndex += 1;
-                } else if (curEvent.type == "MOVE") {
-                    const timeElapsed = timestamp - this._prevTimeStamp;
-                    const pathDistanceTravelled = this.SPEED * timeElapsed;
-                    const curPoint = this.path[this.currentPathIndex];
-                    const nxtPoint = this.path[this.currentPathIndex+1];
-                    const segmentProgress = Math.min(1, pathDistanceTravelled / getEuclideanDistance(curPoint, nxtPoint));
-                    const new_position = interpolatePosition(curPoint, nxtPoint, segmentProgress);
-            
-                    this.setLatLng(new_position);
-
-                    // Update enqueue lines if this is a trike
-                    if (this.id.startsWith("trike")) {
-                        this.updateEnqueueLines();
-                    }
-
-                    if (Math.round(segmentProgress*100) == 100) {
-                        this._prevTimeStamp = timestamp;
-                        this.currentPathIndex += 1;
-                        curEvent.data -= 1;
-
-                        if (curEvent.data == 0) {
-                            this.currentEventIndex += 1;
-                            // If this was a roam path, create the visualization
-                            if (curEvent.isRoam && this.currentPathIndex > 0) {
-                                const startIdx = Math.max(0, this.currentPathIndex - curEvent.pathLength);
-                                const endIdx = Math.min(this.path.length - 1, this.currentPathIndex);
-                                if (startIdx < endIdx) {
-                                    const roamPath = this.path.slice(startIdx, endIdx + 1);
-                                    if (roamPath.length >= 2) {
-                                        this.createRoamPath(roamPath);
-                                    }
-                                }
-                            }
-                        }
-                    }
-                } else if (curEvent.type == "DROP-OFF" || curEvent.type == "LOAD" || 
-                          curEvent.type == "ENQUEUE" || curEvent.type == "RESET") {
-                    // Store current position and ensure it's maintained
-                    const eventPoint = this.path[this.currentPathIndex];
-                    if (eventPoint && Array.isArray(eventPoint) && eventPoint.length === 2) {
-                        // Ensure we're at the exact event location
-                        this.setLatLng(eventPoint);
-                        
-                        const message = `${this.id}: ${curEvent.type} ${curEvent.data || ""}`;
-                        const eventMarker = this.createEventMarker(eventPoint[0], eventPoint[1], message);
-                        
-                        // Log the event with the actual time from the event object
-                        this.logEvent(curEvent.time, curEvent.type, curEvent.data);
-                        console.log(`Processing ${curEvent.type} event at time ${curEvent.time} for ${this.id}`);
-                        
-                        // Update passenger set for tricycles and passenger states
-                        if (this.id.startsWith("trike")) {
-                            if (curEvent.type == "DROP-OFF") {
-                                this.passengers.delete(curEvent.data);
-                                updatePassengerState(curEvent.data, "COMPLETED");
-                                // Update marker color based on new status
-                                this.updateMarkerColor(4); // RETURNING
-                                // Remove the load marker for this passenger with a small delay
-                                const loadMarker = window.loadMarkers.get(curEvent.data);
-                                if (loadMarker) {
-                                    setTimeout(() => {
-                                        loadMarker.remove();
-                                        window.loadMarkers.delete(curEvent.data);
-                                    }, 100); // Small delay to prevent visual jarring
-                                }
-                            } else if (curEvent.type == "LOAD") {
-                                // Batch all updates for LOAD event
-                                const passengerId = curEvent.data;
-                                
-                                // Update passenger state
-                                updatePassengerState(passengerId, "ONBOARD");
-                                
-                                // Update marker color before adding passenger
-                                this.updateMarkerColor(1); // SERVING
-                                
-                                // Add passenger to set
-                                this.passengers.add(passengerId);
-                                
-                                // Remove the appear marker with a small delay
-                                const appearMarker = window.appearMarkers.get(passengerId);
-                                if (appearMarker) {
-                                    setTimeout(() => {
-                                        appearMarker.remove();
-                                        window.appearMarkers.delete(passengerId);
-                                    }, 100);
-                                }
-                                
-                                // Remove the enqueue line with a small delay
-                                const lineData = window.enqueueLines.get(passengerId);
-                                if (lineData && lineData.trikeId === this.id) {
-                                    setTimeout(() => {
-                                        lineData.line.remove();
-                                        window.enqueueLines.delete(passengerId);
-                                    }, 100);
-                                }
-                                
-                                // Update tooltip after all changes
-                                this.updateTooltip();
-                            } else if (curEvent.type == "ENQUEUE") {
-                                // Update passenger state when tricycle enqueues a passenger
-                                updatePassengerState(curEvent.data, "ENQUEUED");
-                                // Update marker color based on new status
-                                this.updateMarkerColor(5); // ENQUEUING
-                                // Create a line connecting the trike to the passenger
-                                const passengerMarker = window.appearMarkers.get(curEvent.data);
-                                if (passengerMarker) {
-                                    const line = L.polyline([
-                                        this.getLatLng(),
-                                        passengerMarker.getLatLng()
-                                    ], {
-                                        color: 'red',
-                                        weight: 2,
-                                        opacity: 1,
-                                        dashArray: '5, 10'
-                                    }).addTo(map);
-                                    
-                                    window.enqueueLines.set(curEvent.data, {
-                                        trikeId: this.id,
-                                        line: line
-                                    });
-                                }
-                                this.updateTooltip();
-                            }
-                        } else if (this.id.startsWith("passenger")) {
-                            // Handle passenger-specific events
-                            if (curEvent.type === "ENQUEUE") {
-                                updatePassengerState(this.id, "ENQUEUED");
-                                console.log(`Passenger ${this.id} enqueued by ${curEvent.data}`);
-                            } else if (curEvent.type === "RESET") {
-                                updatePassengerState(this.id, "WAITING");
-                                console.log(`Passenger ${this.id} reset by ${curEvent.data}`);
-                            }
-                        }
-                    } else {
-                        console.warn(`Invalid event point for ${this.id}:`, eventPoint);
+            // Process each frame to maintain synchronization
+            for (let i = 0; i < framesToProcess; i++) {
+                // If we've reached the end of the path, stop moving
+                if (this.currentPathIndex >= this.path.length - 1) {
+                    console.log(`Trike ${this.id} reached end of path at index ${this.currentPathIndex}`);
+                    this._isAnimating = false;
+                    return;
+                }
+                
+                // Get current position from path
+                const currentPoint = this.path[this.currentPathIndex];
+                
+                // Set the position
+                if (this._isValidCoordinate(currentPoint)) {
+                    // Convert OSRM [lng, lat] to Leaflet [lat, lng] for display
+                    const leafletPosition = [currentPoint[1], currentPoint[0]];
+                    this.setLatLng(leafletPosition);
+                    this._currentPosition = currentPoint;
+                    
+                    // Update visual elements
+                    if (window.visualManager) {
+                        window.visualManager.updateEnqueueLines(this.id, currentPoint);
+                        window.visualManager.updateTrikeTooltip(this, this.id, this.passengers);
+                        // Update trike position with current path index
+                        window.visualManager.updateTrikePosition(this.id, leafletPosition, this.currentPathIndex);
                     }
                     
-                    // Update timestamps to maintain position
-                    this._prevTimeStamp = timestamp;
-                    this.currentEventIndex += 1;
-                } else if (curEvent.type == "WAIT") {
-                    const timeElapsed = timestamp - this._prevTimeStamp;
-                    curEvent.data -= timeElapsed;
-                    if (curEvent.data <= 0) {
-                        this.currentEventIndex += 1;
+                    // Process events for this frame
+                    if (this.events && this.currentEventIndex < this.events.length) {
+                        const event = this.events[this.currentEventIndex];
+                        if (event && event.frame === this.currentPathIndex) {
+                            if (window.visualManager) {
+                                window.visualManager.logEvent(this.currentPathIndex, this.id, event.type, JSON.stringify(event.data));
+                            }
+                            this.currentEventIndex++;
+                        }
                     }
-                } else if (curEvent.type == "FINISH") {
-                    this.unbindTooltip();
-                    this.bindTooltip(`${this.id}: Finished trips`, {
-                        permanent: false,
-                        direction: 'top'
-                    });
-                    console.log(timestamp-this._startTimeStamp, this.id, ": Done");
-                    noRequestAnim = true;
+                    
+                    // Move to next point
+                    this.currentPathIndex++;
                 } else {
-                    console.error(`Unknown event type: ${curEvent.type}`, curEvent);
-                    this.currentEventIndex += 1;
+                    console.error(`Invalid coordinate for trike ${this.id} at index ${this.currentPathIndex}:`, currentPoint);
+                    this._isAnimating = false;
+                    return;
                 }
             }
-        } else {
-            this._prevTimeStamp = timestamp;
-        }
-        
-        if (!noRequestAnim) {
-            this._animId = L.Util.requestAnimFrame(this._animate, this, false);
-            this._animRequested = true;
-        }
-    },
-
-    setSimTime: function(simTime) {
-        // Calculate where the marker should be at simTime
-        // This logic should mimic what _animate does, but for a specific time
-        // You may need to store the start time and speed as properties
-
-        // Example logic (you may need to adapt this to your plugin's structure):
-        let elapsed = simTime - this.stime;
-        if (elapsed < 0) elapsed = 0;
-
-        // Find which segment of the path we're on
-        let totalDist = 0;
-        let segmentIndex = 0;
-        let segmentProgress = 0;
-        let found = false;
-
-        for (let i = 0; i < this.path.length - 1; i++) {
-            let segDist = getEuclideanDistance(this.path[i], this.path[i+1]);
-            let segTime = segDist / this.SPEED;
-            if (elapsed < segTime) {
-                segmentIndex = i;
-                segmentProgress = elapsed / segTime;
-                found = true;
-                break;
-            }
-            elapsed -= segTime;
-        }
-        if (!found) {
-            // At the end of the path
-            segmentIndex = this.path.length - 2;
-            segmentProgress = 1;
-        }
-
-        let curPoint = this.path[segmentIndex];
-        let nxtPoint = this.path[segmentIndex + 1];
-        let new_position = interpolatePosition(curPoint, nxtPoint, segmentProgress);
-
-        this.setLatLng(new_position);
-    },
-
-    // Update the updateEnqueueLines method
-    updateEnqueueLines: function() {
-        // Update all enqueue lines for this trike
-        window.enqueueLines.forEach((lineData, passengerId) => {
-            if (lineData.trikeId === this.id) {
-                const passengerMarker = window.appearMarkers.get(passengerId);
-                if (passengerMarker) {
-                    lineData.line.setLatLngs([
-                        this.getLatLng(),
-                        passengerMarker.getLatLng()
-                    ]);
-                }
-            }
-        });
-    },
-
-    // Update remove method to clean up lines and roam path
-    remove: function() {
-        // Remove all event markers
-        this.eventMarkers.forEach(marker => marker.remove());
-        this.eventMarkers = [];
-        
-        // Remove roam path if it exists
-        if (this.roamPath) {
-            this.roamPath.line.remove();
-            this.roamPath.startMarker.remove();
-            this.roamPath.endMarker.remove();
-        }
-        
-        // Remove all enqueue lines for this trike
-        if (this.id.startsWith("trike")) {
-            window.enqueueLines.forEach((lineData, passengerId) => {
-                if (lineData.trikeId === this.id) {
-                    lineData.line.remove();
-                    window.enqueueLines.delete(passengerId);
-                }
+            
+            this._lastSimulationFrame = currentSimulationFrame;
+            
+            // Debug logging
+            console.log(`Simulation frame update for ${this.id}:`, {
+                frame: currentSimulationFrame,
+                currentIndex: this.currentPathIndex - 1, // Show the index we just processed
+                currentPoint: this._currentPosition,
+                pathLength: this.path.length
             });
         }
         
-        // Call parent remove
-        L.Marker.prototype.remove.call(this);
+        // Continue animation
+        this._animationFrame = requestAnimationFrame(() => this._animate());
+    },
+
+    _getTotalPathDistance: function() {
+        let total = 0;
+        for (let i = 0; i < this.path.length - 1; i++) {
+            total += getEuclideanDistance(this.path[i], this.path[i + 1]);
+        }
+        return total;
+    },
+
+    _isValidCoordinate: function(coord) {
+        return Array.isArray(coord) && 
+               coord.length === 2 && 
+               typeof coord[0] === 'number' && 
+               typeof coord[1] === 'number' &&
+               !isNaN(coord[0]) && 
+               !isNaN(coord[1]);
+    },
+
+    /**
+     * Event Processing Methods
+     */
+
+    _processEvents: function(timestamp) {
+        if (!this.events || !Array.isArray(this.events)) return;
+
+        while (this.currentEventIndex < this.events.length) {
+            const event = this.events[this.currentEventIndex];
+            if (!event) {
+                console.warn(`Invalid event at index ${this.currentEventIndex} for marker ${this.id}`);
+                this.currentEventIndex++;
+                continue;
+            }
+
+            const shouldProcess = eventProcessor.processEvent({
+                type: 'CHECK_EVENT_TIMING',
+                event: event,
+                currentTime: timestamp
+            });
+
+            if (!shouldProcess) break;
+
+            if (stateManager.isValidEvent(event)) {
+                eventProcessor.processEvent({
+                    type: 'PROCESS_MARKER_EVENT',
+                    marker: this,
+                    event: event,
+                    timestamp: timestamp
+                });
+            } else {
+                console.warn(`Invalid event data for ${this.id}:`, event);
+            }
+
+            this.currentEventIndex++;
+        }
+    },
+
+    /**
+     * Event Handler Methods
+     */
+
+    createEventMarker: function(lat, lng, message) {
+        const marker = eventProcessor.processEvent({
+            type: 'CREATE_EVENT_MARKER',
+            lat: lat,
+            lng: lng,
+            message: message,
+            id: this.id
+        });
+
+        if (marker) {
+            eventProcessor.processEvent({
+                type: 'TRACK_EVENT_MARKER',
+                marker: marker
+            });
+        }
+
+        return marker;
+    },
+
+    logEvent: function(time, type, data) {
+        eventProcessor.processEvent({
+            type: 'LOG_EVENT',
+            time: time,
+            id: this.id,
+            type: type,
+            data: data
+        });
+    },
+
+    // Public methods for external control
+    updateStatus: function(status) {
+        this.status = status;
+        if (window.visualManager) {
+            window.visualManager.updateTrikeColor(this, status);
+        }
+    },
+
+    updatePassengers: function(passengers) {
+        this.passengers = new Set(passengers);
+        if (window.visualManager) {
+            window.visualManager.updateTrikeTooltip(this, this.id, this.passengers);
+        }
+    },
+
+    setRoamPath: function(path) {
+        if (window.visualManager) {
+            window.visualManager.setRoamPath(this.id, path);
+        }
     }
 });
 
-L.Marker.movingMarker = function (id, path, stime=0, dtime=Infinity, speed=0.0000005, events=null) {
-    // Speed is already scaled from map.js, just use it directly
-    console.log(`Creating marker ${id} with speed ${speed} degrees/ms`);
-    return new L.Marker.MovingMarker(id, path, stime, dtime, speed, events);
-}
+L.movingMarker = function (id, path, stime=0, dtime=Infinity, speed=0.1, events=null) {
+    return new L.MovingMarker(id, path, stime, dtime, speed, events);
+};
+
+// Add a method to control simulation speed
+L.MovingMarker.setSimulationSpeed = function(speed) {
+    window.SIMULATION_SPEED = speed;
+};
