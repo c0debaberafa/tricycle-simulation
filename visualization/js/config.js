@@ -7,7 +7,7 @@
 // Simulation timing
 export const TIMING_CONFIG = {
     frameDuration: 16,  // Target frame duration in ms (~60fps)
-    simulationFrameTime: 25,  // Time between simulation updates in ms
+    simulationFrameTime: 16,  // Time between simulation updates in ms
     baseSpeedMultiplier: 2000  // Base speed multiplier for visualization
 };
 
@@ -28,7 +28,7 @@ export const API_ENDPOINTS = {
 
 // Default simulation parameters
 export const DEFAULT_SIMULATION = {
-    id: "3-2-100-hacmexchjyct",
+    id: "3-2-100-gzxbcenlvgyx",
     trikes: 15,
     passengers: 200
 };

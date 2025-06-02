@@ -79,7 +79,7 @@ def run_simulation(num_trikes, use_smart_scheduler=True, trike_capacity=3, seed=
             print(f"\nRunning simulation with {num_trikes} tricycles (capacity: {trike_capacity}, s_radius: {s_enqueue_radius_meters}, maxCycles: {maxCycles}, seed: {seed}, attempt: {attempt + 1}/{max_retries})")
             start_time = time.time()
             
-            results = simulator.run(seed=seed, maxTime=10000, fixedHotspots=config.MAGIN_HOTSPOTS, fixedTerminals=config.MAGIN_TERMINALS)
+            results = simulator.run(seed=seed, maxTime=15000, fixedHotspots=config.MAGIN_HOTSPOTS, fixedTerminals=config.MAGIN_TERMINALS)
             end_time = time.time()
             
             # Add execution time and metadata to results
@@ -184,6 +184,8 @@ def main():
         for run in range(num_runs):
             seed = f"groupA_{num_trikes}_{run}"
             if (num_trikes, True, 3, seed, 50, 100, 2) not in completed_sims:
+                print(f"\nTesting Group A - Number of Tricycles: {num_trikes}")
+                print(f"Fixed parameters: capacity=3, s_radius=50, e_radius=100, maxCycles=2")
                 results = run_simulation(
                     num_trikes,
                     use_smart_scheduler=True,
@@ -208,6 +210,8 @@ def main():
         for run in range(num_runs):
             seed = f"groupB_{capacity}_{run}"
             if (9, True, capacity, seed, 50, 100, 2) not in completed_sims:
+                print(f"\nTesting Group B - Tricycle Capacity: {capacity}")
+                print(f"Fixed parameters: trikes=9, s_radius=50, e_radius=100, maxCycles=2")
                 results = run_simulation(
                     9,  # Fixed number of tricycles
                     use_smart_scheduler=True,
@@ -232,6 +236,8 @@ def main():
         for run in range(num_runs):
             seed = f"groupC_{radius}_{run}"
             if (9, True, 3, seed, 50, radius, 2) not in completed_sims:
+                print(f"\nTesting Group C - Enqueue Radius: {radius} meters")
+                print(f"Fixed parameters: trikes=9, capacity=3, s_radius=50, maxCycles=2")
                 results = run_simulation(
                     9,  # Fixed number of tricycles
                     use_smart_scheduler=True,
@@ -256,6 +262,8 @@ def main():
         for run in range(num_runs):
             seed = f"groupD_{radius}_{run}"
             if (9, True, 3, seed, radius, 100, 2) not in completed_sims:
+                print(f"\nTesting Group D - Serving Enqueue Radius: {radius} meters")
+                print(f"Fixed parameters: trikes=9, capacity=3, e_radius=100, maxCycles=2")
                 results = run_simulation(
                     9,  # Fixed number of tricycles
                     use_smart_scheduler=True,

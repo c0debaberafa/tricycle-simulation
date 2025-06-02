@@ -18,6 +18,7 @@ class SimulationRun:
             self.useSmartScheduler = metadata['smartScheduling']
             self.trikeCapacity = metadata['trikeConfig']['capacity']
             self.s_enqueue_radius = metadata['trikeConfig']['s_enqueue_radius_meters']
+            self.enqueue_radius = metadata['trikeConfig']['enqueue_radius_meters']
             self.maxCycles = metadata['trikeConfig']['maxCycles']
         
         # Load summary statistics
@@ -132,42 +133,57 @@ def main():
         print("1. Are there any simulations with 100 passengers?")
         return
 
-    # Group A: Number of tricycles (smart scheduling, capacity 3)
-    group_a_sims = [x for x in valid_simulations if x.useSmartScheduler and x.trikeCapacity == 3]
+    # Group A: Number of tricycles (smart scheduling, capacity 3, s_radius=50, e_radius=100, maxCycles=2)
+    group_a_sims = [x for x in valid_simulations 
+                   if x.useSmartScheduler 
+                   and x.trikeCapacity == 3 
+                   and x.s_enqueue_radius == 50 
+                   and x.enqueue_radius == 100 
+                   and x.maxCycles == 2]
     if group_a_sims:
         x_values = [x.numTrikes for x in group_a_sims]
         plot_metric(group_a_sims, x_values, "Number of Tricycles", "Number of Tricycles", "A")
-        print("Generated Group A figures (Number of Tricycles)")
+        print(f"Generated Group A figures (Number of Tricycles) - {len(group_a_sims)} simulations")
+        print(f"Found tricycle counts: {sorted(set(x_values))}")
 
-    # Group B: Tricycle capacity (smart scheduling)
-    group_b_sims = [x for x in valid_simulations if x.useSmartScheduler]
+    # Group B: Tricycle capacity (smart scheduling, trikes=9, s_radius=50, e_radius=100, maxCycles=2)
+    group_b_sims = [x for x in valid_simulations 
+                   if x.useSmartScheduler 
+                   and x.numTrikes == 9 
+                   and x.s_enqueue_radius == 50 
+                   and x.enqueue_radius == 100 
+                   and x.maxCycles == 2]
     if group_b_sims:
         x_values = [x.trikeCapacity for x in group_b_sims]
         plot_metric(group_b_sims, x_values, "Tricycle Capacity", "Tricycle Capacity", "B")
-        print("Generated Group B figures (Tricycle Capacity)")
+        print(f"Generated Group B figures (Tricycle Capacity) - {len(group_b_sims)} simulations")
+        print(f"Found capacities: {sorted(set(x_values))}")
 
-    # Group C: Enqueue radius (smart scheduling, capacity 3)
-    group_c_sims = [x for x in valid_simulations if x.useSmartScheduler and x.trikeCapacity == 3]
+    # Group C: Enqueue radius (smart scheduling, trikes=9, capacity=3, s_radius=50, maxCycles=2)
+    group_c_sims = [x for x in valid_simulations 
+                   if x.useSmartScheduler 
+                   and x.numTrikes == 9 
+                   and x.trikeCapacity == 3 
+                   and x.s_enqueue_radius == 50 
+                   and x.maxCycles == 2]
     if group_c_sims:
-        x_values = [x.s_enqueue_radius for x in group_c_sims]
+        x_values = [x.enqueue_radius for x in group_c_sims]  # Changed from s_enqueue_radius to enqueue_radius
         plot_metric(group_c_sims, x_values, "Enqueue Radius (meters)", "Enqueue Radius", "C")
-        print("Generated Group C figures (Enqueue Radius)")
+        print(f"Generated Group C figures (Enqueue Radius) - {len(group_c_sims)} simulations")
+        print(f"Found enqueue radii: {sorted(set(x_values))}")
 
-    # Group D: Serving enqueue radius (smart scheduling, capacity 3)
-    # First, find the most common maxCycles value
-    base_sims = [x for x in valid_simulations if x.useSmartScheduler and x.trikeCapacity == 3]
-    if base_sims:
-        cycles_counts = {}
-        for sim in base_sims:
-            cycles_counts[sim.maxCycles] = cycles_counts.get(sim.maxCycles, 0) + 1
-        most_common_cycles = max(cycles_counts.items(), key=lambda x: x[1])[0]
-        
-        # Filter for simulations with identical parameters except s_enqueue_radius
-        group_d_sims = [x for x in base_sims if x.maxCycles == most_common_cycles]
-        if group_d_sims:
-            x_values = [x.s_enqueue_radius for x in group_d_sims]
-            plot_metric(group_d_sims, x_values, "Serving Enqueue Radius (meters)", "Serving Enqueue Radius", "D")
-            print("Generated Group D figures (Serving Enqueue Radius)")
+    # Group D: Serving enqueue radius (smart scheduling, trikes=9, capacity=3, e_radius=100, maxCycles=2)
+    group_d_sims = [x for x in valid_simulations 
+                   if x.useSmartScheduler 
+                   and x.numTrikes == 9 
+                   and x.trikeCapacity == 3 
+                   and x.enqueue_radius == 100 
+                   and x.maxCycles == 2]
+    if group_d_sims:
+        x_values = [x.s_enqueue_radius for x in group_d_sims]
+        plot_metric(group_d_sims, x_values, "Serving Enqueue Radius (meters)", "Serving Enqueue Radius", "D")
+        print(f"Generated Group D figures (Serving Enqueue Radius) - {len(group_d_sims)} simulations")
+        print(f"Found serving enqueue radii: {sorted(set(x_values))}")
 
     print("\nAll figures have been generated in the 'figures' directory")
 
