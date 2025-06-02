@@ -6,206 +6,170 @@ import pandas as pd
 from datetime import datetime
 
 class SimulationRun:
-    def __init__(self, name):
-        self.name = name
-        try:
-            numTrikes, numTerminals, numPassengers, seed = name.split('-')
-            self.numTrikes = int(numTrikes)
-            self.numTerminals = int(numTerminals)
-            self.numPassengers = int(numPassengers)
-            self.seed = seed
-        except ValueError:
-            # Handle new format with timestamp
-            parts = name.split('-')
-            self.numTrikes = int(parts[0])
-            self.numTerminals = int(parts[1])
-            self.numPassengers = int(parts[2])
-            self.seed = parts[3]
-
-        with open(os.path.join('data', 'real', self.name, 'metadata.json')) as f:
-            self.metadata = json.load(f)
+    def __init__(self, run_dir):
+        """Initialize from a simulation run directory"""
+        self.run_dir = run_dir
         
-        # validate if metadata is updated
-        if 'isRealistic' not in self.metadata:
-            raise Exception("Not realistic")
-        if 'lastActivityTime' not in self.metadata:
-            raise Exception("Wrong metadata")
-        if 'smartScheduling' not in self.metadata:
-            raise Exception("Wrong metadata")
+        # Load metadata
+        with open(os.path.join(run_dir, 'metadata.json'), 'r') as f:
+            metadata = json.load(f)
+            self.metadata = metadata
+            self.numTrikes = metadata['totalTrikes']
+            self.useSmartScheduler = metadata['smartScheduling']
+            self.trikeCapacity = metadata['trikeConfig']['capacity']
+            self.s_enqueue_radius = metadata['trikeConfig']['s_enqueue_radius_meters']
+            self.maxCycles = metadata['trikeConfig']['maxCycles']
         
-        self.trikeCapacity = self.metadata['trikeConfig'].get('capacity', 3)
-        self.useSmartScheduler = self.metadata.get('smartScheduling', True)
-
-        self.trikes = []
-        for i in range(self.numTrikes):
-            with open(os.path.join('data', 'real', self.name, f'trike_{i}.json')) as f:
-                data = json.load(f)
-                trike = {
-                    "totalDistance": data["totalDistance"],
-                    "productiveDistance": data["productiveDistance"],
-                    "waitingTimeSeconds": max(0, data["waitingTime"]),
-                    "speed": data["speed"],
-                    "productiveTravelTimeSeconds": data["totalProductiveDistanceM"]/data["speed"],
-                    "unproductiveTravelTimeSeconds": (data["totalDistance"]-data["productiveDistance"])/data["speed"]
-                }
-                trike["totalTimeSeconds"] = trike["waitingTimeSeconds"] + trike["productiveTravelTimeSeconds"] + trike["unproductiveTravelTimeSeconds"]
-                self.trikes.append(trike)
-
+        # Load summary statistics
+        with open(os.path.join(run_dir, 'summary.json'), 'r') as f:
+            self.summary = json.load(f)
+        
+        # Load passenger data
         self.passengers = []
-        for i in range(self.numPassengers):
-            try:
-                with open(os.path.join('data', 'real', self.name, f'passenger_{i}.json')) as f:
-                    data = json.load(f)
+        for filename in os.listdir(run_dir):
+            if filename.startswith('passenger_') and filename.endswith('.json'):
+                with open(os.path.join(run_dir, filename), 'r') as f:
+                    passenger_data = json.load(f)
                     passenger = {
-                        "waitingTime": data["pickupTime"] - data["createTime"],
-                        "travelingTime": data["deathTime"] - data["pickupTime"],
-                        "waitingTimeSeconds": data["pickupTime"] - data["createTime"],
-                        "travelingTimeSeconds": data["deathTime"] - data["pickupTime"]
+                        "waitingTime": passenger_data['pickupTime'] - passenger_data['createTime'],
+                        "travelingTime": passenger_data['deathTime'] - passenger_data['pickupTime'],
+                        "waitingTimeSeconds": passenger_data['pickupTime'] - passenger_data['createTime'],
+                        "travelingTimeSeconds": passenger_data['deathTime'] - passenger_data['pickupTime']
                     }
                     self.passengers.append(passenger)
-            except (FileNotFoundError, KeyError, json.JSONDecodeError) as e:
-                continue
+        
+        # Load tricycle data
+        self.trikes = []
+        for filename in os.listdir(run_dir):
+            if filename.startswith('trike_') and filename.endswith('.json'):
+                with open(os.path.join(run_dir, filename), 'r') as f:
+                    trike_data = json.load(f)
+                    trike = {
+                        "totalDistance": trike_data['totalDistance'],
+                        "productiveDistance": trike_data['productiveDistance'],
+                        "waitingTimeSeconds": max(0, trike_data['waitingTime']),
+                        "speed": trike_data['speed'],
+                        "productiveTravelTimeSeconds": trike_data['totalProductiveDistanceM']/trike_data['speed'],
+                        "unproductiveTravelTimeSeconds": (trike_data['totalDistance']-trike_data['productiveDistance'])/trike_data['speed']
+                    }
+                    trike["totalTimeSeconds"] = trike["waitingTimeSeconds"] + trike["productiveTravelTimeSeconds"] + trike["unproductiveTravelTimeSeconds"]
+                    self.trikes.append(trike)
+
+def plot_metric(sims, x_values, x_label, title_prefix, fig_name):
+    """Helper function to create a plot for a specific metric"""
+    fig, ax = plt.subplots(figsize=(10, 6))
+    
+    # Plot waiting time
+    y_values = [sum([p["waitingTimeSeconds"] for p in x.passengers])/len(x.passengers) for x in sims]
+    sns.regplot(x='x', y='y', data=pd.DataFrame({'x': x_values, 'y': y_values}), 
+                ci=None, ax=ax)
+    ax.set_xlabel(x_label)
+    ax.set_ylabel("Average Passenger Waiting Time (s)")
+    ax.set_title(f"{title_prefix} vs Average Passenger Waiting Time")
+    ax.grid(True)
+    plt.savefig(f'figures/fig{fig_name}1.png', bbox_inches='tight')
+    plt.close()
+    
+    # Plot traveling time
+    fig, ax = plt.subplots(figsize=(10, 6))
+    y_values = [sum([p["travelingTimeSeconds"] for p in x.passengers])/len(x.passengers) for x in sims]
+    sns.regplot(x='x', y='y', data=pd.DataFrame({'x': x_values, 'y': y_values}), 
+                ci=None, ax=ax)
+    ax.set_xlabel(x_label)
+    ax.set_ylabel("Average Passenger Traveling Time (s)")
+    ax.set_title(f"{title_prefix} vs Average Passenger Traveling Time")
+    ax.grid(True)
+    plt.savefig(f'figures/fig{fig_name}2.png', bbox_inches='tight')
+    plt.close()
+    
+    # Plot productive time
+    fig, ax = plt.subplots(figsize=(10, 6))
+    y_values = [sum([t["productiveTravelTimeSeconds"]/t["totalTimeSeconds"] for t in x.trikes])/len(x.trikes) for x in sims]
+    sns.regplot(x='x', y='y', data=pd.DataFrame({'x': x_values, 'y': y_values}), 
+                ci=None, ax=ax)
+    ax.set_xlabel(x_label)
+    ax.set_ylabel("Average Tricycle Productive Time (%)")
+    ax.set_title(f"{title_prefix} vs Average Tricycle Productive Time")
+    ax.grid(True)
+    plt.savefig(f'figures/fig{fig_name}3.png', bbox_inches='tight')
+    plt.close()
 
 def main():
     # Create figures directory if it doesn't exist
     os.makedirs('figures', exist_ok=True)
     
-    # Generate timestamp for new figures
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    
-    # Load all simulations
+    # Load simulation results
+    print("\nLoading simulation results...")
     simulations = []
-    print("\nLoading simulations...")
-    for case in os.listdir(os.path.join('data', 'real')):
-        # Skip .DS_Store and other hidden files
-        if case.startswith('.'):
-            continue
-        try:
-            simulation = SimulationRun(case)
-            simulations.append(simulation)
-            print(f"Loaded simulation: {case}")
-        except Exception as e:
-            print(f"Failed to load simulation {case}: {str(e)}")
-            continue
+    
+    # Look for simulation directories
+    data_dir = os.path.join('data', 'real')
+    for run_dir in os.listdir(data_dir):
+        run_path = os.path.join(data_dir, run_dir)
+        if os.path.isdir(run_path) and not run_dir.startswith('.'):
+            try:
+                simulation = SimulationRun(run_path)
+                simulations.append(simulation)
+                print(f"Loaded simulation with {simulation.numTrikes} tricycles, capacity {simulation.trikeCapacity}")
+            except Exception as e:
+                print(f"Failed to load simulation {run_dir}: {str(e)}")
+                continue
 
     print(f"\nTotal simulations loaded: {len(simulations)}")
+    
+    if len(simulations) == 0:
+        print("\nNo valid simulations found! Check the following:")
+        print("1. Are there any simulation results in data/real/ directory?")
+        print("2. Do the simulation results have the correct format?")
+        return
 
     # Filter valid simulations (100 passengers)
-    valid_simulations = list(filter(lambda x: x.numPassengers == 100, simulations))
+    valid_simulations = list(filter(lambda x: len(x.passengers) == 100, simulations))
     print(f"\nValid simulations after filtering: {len(valid_simulations)}")
     
     if len(valid_simulations) == 0:
         print("\nNo valid simulations found! Check the following:")
-        print("1. Are there any simulations in data/real/ directory?")
-        print("2. Do the simulations have numPassengers=100?")
+        print("1. Are there any simulations with 100 passengers?")
         return
 
-    # Filter simulations for graphs 1-3 (smart scheduling, capacity 3)
-    smart_cap3_sims = [x for x in valid_simulations if x.useSmartScheduler and x.trikeCapacity == 3]
-    
-    # Create figure 1: Number of tricycles vs Average Passenger Waiting Time
-    fig1, ax1 = plt.subplots(figsize=(10, 6))
-    x_values = [x.numTrikes for x in smart_cap3_sims]
-    y_values = [sum([p["waitingTimeSeconds"] for p in x.passengers])/len(x.passengers) for x in smart_cap3_sims]
-    sns.regplot(x='x', y='y', data=pd.DataFrame({'x': x_values, 'y': y_values}), 
-                ci=None, ax=ax1)
-    ax1.set_xlabel("Number of Tricycles")
-    ax1.set_ylabel("Average Passenger Waiting Time (s)")
-    ax1.set_title("Effect of Number of Tricycles on Average Passenger Waiting Time")
-    ax1.grid(True)
-    plt.savefig(f'figures/waiting_time_tricycles_{timestamp}.png', bbox_inches='tight')
-    plt.close()
+    # Group A: Number of tricycles (smart scheduling, capacity 3)
+    group_a_sims = [x for x in valid_simulations if x.useSmartScheduler and x.trikeCapacity == 3]
+    if group_a_sims:
+        x_values = [x.numTrikes for x in group_a_sims]
+        plot_metric(group_a_sims, x_values, "Number of Tricycles", "Number of Tricycles", "A")
+        print("Generated Group A figures (Number of Tricycles)")
 
-    # Create figure 2: Number of tricycles vs Average Passenger Traveling Time
-    fig2, ax2 = plt.subplots(figsize=(10, 6))
-    x_values = [x.numTrikes for x in smart_cap3_sims]
-    y_values = [sum([p["travelingTimeSeconds"] for p in x.passengers])/len(x.passengers) for x in smart_cap3_sims]
-    sns.regplot(x='x', y='y', data=pd.DataFrame({'x': x_values, 'y': y_values}), 
-                ci=None, ax=ax2)
-    ax2.set_xlabel("Number of Tricycles")
-    ax2.set_ylabel("Average Passenger Traveling Time (s)")
-    ax2.set_title("Effect of Number of Tricycles on Average Passenger Traveling Time")
-    ax2.grid(True)
-    plt.savefig(f'figures/traveling_time_tricycles_{timestamp}.png', bbox_inches='tight')
-    plt.close()
+    # Group B: Tricycle capacity (smart scheduling)
+    group_b_sims = [x for x in valid_simulations if x.useSmartScheduler]
+    if group_b_sims:
+        x_values = [x.trikeCapacity for x in group_b_sims]
+        plot_metric(group_b_sims, x_values, "Tricycle Capacity", "Tricycle Capacity", "B")
+        print("Generated Group B figures (Tricycle Capacity)")
 
-    # Create figure 3: Number of tricycles vs Tricycle Productive Time
-    fig3, ax3 = plt.subplots(figsize=(10, 6))
-    x_values = [x.numTrikes for x in smart_cap3_sims]
-    y_values = [sum([t["productiveTravelTimeSeconds"]/t["totalTimeSeconds"] for t in x.trikes])/len(x.trikes) for x in smart_cap3_sims]
-    sns.regplot(x='x', y='y', data=pd.DataFrame({'x': x_values, 'y': y_values}), 
-                ci=None, ax=ax3)
-    ax3.set_xlabel("Number of Tricycles")
-    ax3.set_ylabel("Average Tricycle Productive Time (%)")
-    ax3.set_title("Effect of Number of Tricycles on Average Tricycle Productive Time")
-    ax3.grid(True)
-    plt.savefig(f'figures/productive_time_tricycles_{timestamp}.png', bbox_inches='tight')
-    plt.close()
+    # Group C: Enqueue radius (smart scheduling, capacity 3)
+    group_c_sims = [x for x in valid_simulations if x.useSmartScheduler and x.trikeCapacity == 3]
+    if group_c_sims:
+        x_values = [x.s_enqueue_radius for x in group_c_sims]
+        plot_metric(group_c_sims, x_values, "Enqueue Radius (meters)", "Enqueue Radius", "C")
+        print("Generated Group C figures (Enqueue Radius)")
 
-    # Create figure 4: FIFO vs Optimized Scheduling
-    fig4, ax4 = plt.subplots(figsize=(10, 6))
-    # Smart scheduling (capacity 3)
-    smart_sims = [x for x in valid_simulations if x.useSmartScheduler and x.trikeCapacity == 3]
-    x_smart = [x.numTrikes for x in smart_sims]
-    y_smart = [sum([p["travelingTimeSeconds"] for p in x.passengers])/len(x.passengers) for x in smart_sims]
-    sns.regplot(x='x', y='y', data=pd.DataFrame({'x': x_smart, 'y': y_smart}), 
-                ci=None, ax=ax4, label="Optimized Scheduling")
-    
-    # FIFO scheduling (capacity 3)
-    fifo_sims = [x for x in valid_simulations if not x.useSmartScheduler and x.trikeCapacity == 3]
-    x_fifo = [x.numTrikes for x in fifo_sims]
-    y_fifo = [sum([p["travelingTimeSeconds"] for p in x.passengers])/len(x.passengers) for x in fifo_sims]
-    sns.regplot(x='x', y='y', data=pd.DataFrame({'x': x_fifo, 'y': y_fifo}), 
-                ci=None, ax=ax4, label="FIFO Scheduling")
-    
-    ax4.set_xlabel("Number of Tricycles")
-    ax4.set_ylabel("Average Passenger Traveling Time (s)")
-    ax4.set_title("Comparison of FIFO vs Optimized Scheduling")
-    ax4.legend()
-    ax4.grid(True)
-    plt.savefig(f'figures/scheduling_comparison_{timestamp}.png', bbox_inches='tight')
-    plt.close()
+    # Group D: Serving enqueue radius (smart scheduling, capacity 3)
+    # First, find the most common maxCycles value
+    base_sims = [x for x in valid_simulations if x.useSmartScheduler and x.trikeCapacity == 3]
+    if base_sims:
+        cycles_counts = {}
+        for sim in base_sims:
+            cycles_counts[sim.maxCycles] = cycles_counts.get(sim.maxCycles, 0) + 1
+        most_common_cycles = max(cycles_counts.items(), key=lambda x: x[1])[0]
+        
+        # Filter for simulations with identical parameters except s_enqueue_radius
+        group_d_sims = [x for x in base_sims if x.maxCycles == most_common_cycles]
+        if group_d_sims:
+            x_values = [x.s_enqueue_radius for x in group_d_sims]
+            plot_metric(group_d_sims, x_values, "Serving Enqueue Radius (meters)", "Serving Enqueue Radius", "D")
+            print("Generated Group D figures (Serving Enqueue Radius)")
 
-    # Create figure 5: Tricycle Capacity vs Passenger Waiting Time
-    fig5, ax5 = plt.subplots(figsize=(10, 6))
-    x_values = [x.trikeCapacity for x in valid_simulations if x.useSmartScheduler]
-    y_values = [sum([p["waitingTimeSeconds"] for p in x.passengers])/len(x.passengers) for x in valid_simulations if x.useSmartScheduler]
-    sns.regplot(x='x', y='y', data=pd.DataFrame({'x': x_values, 'y': y_values}), 
-                ci=None, ax=ax5)
-    ax5.set_xlabel("Tricycle Capacity")
-    ax5.set_ylabel("Average Passenger Waiting Time (s)")
-    ax5.set_title("Effect of Tricycle Capacity on Average Passenger Waiting Time")
-    ax5.grid(True)
-    plt.savefig(f'figures/waiting_time_capacity_{timestamp}.png', bbox_inches='tight')
-    plt.close()
-
-    # Create figure 6: Tricycle Capacity vs Passenger Traveling Time
-    fig6, ax6 = plt.subplots(figsize=(10, 6))
-    x_values = [x.trikeCapacity for x in valid_simulations if x.useSmartScheduler]
-    y_values = [sum([p["travelingTimeSeconds"] for p in x.passengers])/len(x.passengers) for x in valid_simulations if x.useSmartScheduler]
-    sns.regplot(x='x', y='y', data=pd.DataFrame({'x': x_values, 'y': y_values}), 
-                ci=None, ax=ax6)
-    ax6.set_xlabel("Tricycle Capacity")
-    ax6.set_ylabel("Average Passenger Traveling Time (s)")
-    ax6.set_title("Effect of Tricycle Capacity on Average Passenger Traveling Time")
-    ax6.grid(True)
-    plt.savefig(f'figures/traveling_time_capacity_{timestamp}.png', bbox_inches='tight')
-    plt.close()
-
-    # Create figure 7: Tricycle Capacity vs Productive Time
-    fig7, ax7 = plt.subplots(figsize=(10, 6))
-    x_values = [x.trikeCapacity for x in valid_simulations if x.useSmartScheduler]
-    y_values = [sum([t["productiveTravelTimeSeconds"]/t["totalTimeSeconds"] for t in x.trikes])/len(x.trikes) for x in valid_simulations if x.useSmartScheduler]
-    sns.regplot(x='x', y='y', data=pd.DataFrame({'x': x_values, 'y': y_values}), 
-                ci=None, ax=ax7)
-    ax7.set_xlabel("Tricycle Capacity")
-    ax7.set_ylabel("Average Tricycle Productive Time (%)")
-    ax7.set_title("Effect of Tricycle Capacity on Average Tricycle Productive Time")
-    ax7.grid(True)
-    plt.savefig(f'figures/productive_time_capacity_{timestamp}.png', bbox_inches='tight')
-    plt.close()
-
-    print(f"\nAll figures have been generated with timestamp {timestamp} in the 'figures' directory")
+    print("\nAll figures have been generated in the 'figures' directory")
 
 if __name__ == '__main__':
     main() 

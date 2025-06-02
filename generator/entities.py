@@ -363,6 +363,7 @@ class Tricycle(Actor):
             useMeters: bool = False,
             maxCycles: int = None,
             s_enqueue_radius_meters: float = None,  # Smaller radius for enqueueing when tricycle is serving passengers
+            enqueue_radius_meters: float = None,  # Radius for enqueueing when not serving passengers
             **trikeConfig
     ):
         super().__init__(createTime, deathTime)
@@ -382,6 +383,7 @@ class Tricycle(Actor):
         self.cycleCount = 0 # To count how many cycles a tricycle has roamed with no pickups
         self.maxCycles = maxCycles if maxCycles is not None else trikeConfig.get("maxCycles", 3) # To count how many cycles a tricycle can roam with no pickups before it is considered dead
         self.s_enqueue_radius_meters = s_enqueue_radius_meters if s_enqueue_radius_meters is not None else trikeConfig.get("s_enqueue_radius_meters", 50)  # Smaller radius for enqueueing when serving passengers
+        self.enqueue_radius_meters = enqueue_radius_meters if enqueue_radius_meters is not None else trikeConfig.get("enqueue_radius_meters", 200)  # Radius for enqueueing when not serving passengers
 
         # initialize the tricycle
         self.isRoaming = isRoaming
@@ -709,7 +711,7 @@ class Tricycle(Actor):
             return None
         
         # Get nearby passengers using the new Map method
-        radius = self.s_enqueue_radius_meters if self.hasPassenger() else ENQUEUE_RADIUS_METERS
+        radius = self.s_enqueue_radius_meters if self.hasPassenger() else self.enqueue_radius_meters
         nearby_passengers = self.map.getNearbyPassengers(cur, radius)
         
         # Sort passengers by distance

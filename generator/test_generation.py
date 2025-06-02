@@ -26,7 +26,7 @@ def load_progress(data_dir):
             return json.load(f)
     return None
 
-def run_simulation(num_trikes, use_smart_scheduler=True, trike_capacity=3, seed=None, max_retries=10, max_wait_time=300, s_enqueue_radius_meters=50, maxCycles=3):
+def run_simulation(num_trikes, use_smart_scheduler=True, trike_capacity=3, seed=None, max_retries=10, max_wait_time=300, s_enqueue_radius_meters=50, enqueue_radius_meters=200, maxCycles=2):
     """
     Run a single simulation with the given parameters.
     
@@ -38,6 +38,7 @@ def run_simulation(num_trikes, use_smart_scheduler=True, trike_capacity=3, seed=
         max_retries (int): Maximum number of retries for failed simulations
         max_wait_time (int): Maximum wait time between retries in seconds
         s_enqueue_radius_meters (float): Radius for enqueueing when tricycle is serving passengers
+        enqueue_radius_meters (float): Radius for enqueueing when tricycle is not serving passengers
         maxCycles (int): Maximum number of cycles before generating new path
     Returns:
         dict: Simulation results or None if all retries failed
@@ -54,8 +55,15 @@ def run_simulation(num_trikes, use_smart_scheduler=True, trike_capacity=3, seed=
         'useFixedTerminals': False,
         'roadPassengerChance': 1.0,
         'roamingTrikeChance': 1.0,
-        's_enqueue_radius_meters': s_enqueue_radius_meters,
-        'maxCycles': maxCycles
+        'trikeConfig': {
+            'capacity': trike_capacity,
+            'speed': 5.556,  # 20 km/h in meters per second
+            'scheduler': None,  # Will be set by Simulator based on useSmartScheduler
+            'useMeters': True,
+            'maxCycles': maxCycles,
+            's_enqueue_radius_meters': s_enqueue_radius_meters,
+            'enqueue_radius_meters': enqueue_radius_meters
+        }
     }
     
     attempt = 0
@@ -120,15 +128,28 @@ def main():
     data_dir = os.path.join('data', 'real')
     os.makedirs(data_dir, exist_ok=True)
 
-    # Test parameters
+    # Test parameters for each group
+    # Group A: Number of tricycles (fixed capacity=3, s_radius=50, e_radius=100, maxCycles=2)
     tricycle_counts = [3, 6, 9, 12, 15]
+    
+    # Group B: Tricycle capacity (fixed trikes=9, s_radius=50, e_radius=100, maxCycles=2)
     tricycle_capacities = [3, 4, 5, 6]
-    s_enqueue_radii = [25, 50, 75, 100]  # Different serving enqueue radii to test
-    max_cycles = [1, 2, 3, 4]  # Different max cycles to test
+    
+    # Group C: Enqueue radius (fixed trikes=9, capacity=3, s_radius=50, maxCycles=2)
+    enqueue_radii = [50, 100, 150, 200]
+    
+    # Group D: Serving enqueue radius (fixed trikes=9, capacity=3, e_radius=100, maxCycles=2)
+    s_enqueue_radii = [25, 50, 75, 100]
+    
     num_runs = 25  # Number of runs per parameter combination
     
-    # Fixed parameters for enqueue radius and max cycles tests
-    FIXED_TRIKES = 9  # Fixed number of tricycles for parameter analysis
+    # Calculate total number of simulations
+    total_simulations = (
+        len(tricycle_counts) * num_runs +  # Group A
+        len(tricycle_capacities) * num_runs +  # Group B
+        len(enqueue_radii) * num_runs +  # Group C
+        len(s_enqueue_radii) * num_runs  # Group D
+    )
     
     # Try to load existing progress
     all_results = load_progress(data_dir)
@@ -144,78 +165,114 @@ def main():
          sim['metadata']['use_smart_scheduler'], 
          sim['metadata']['trike_capacity'], 
          sim['metadata']['seed'],
-         sim['metadata'].get('s_enqueue_radius_meters', 50),  # Default to 50 if not present
-         sim['metadata'].get('maxCycles', 3))  # Default to 3 if not present
+         sim['metadata'].get('s_enqueue_radius_meters', 50),
+         sim['metadata'].get('enqueue_radius_meters', 100),
+         sim['metadata'].get('maxCycles', 2))
         for sim in all_results['simulations']
     }
-    
-    # # 1. Run smart scheduling tests with capacity 3 (for graphs 1-3)
-    # print("\n=== Running Smart Scheduling Tests (capacity 3) ===")
-    # for num_trikes in tricycle_counts:
-    #     for run in range(num_runs):
-    #         seed = f"graphdata{run}"
-    #         if (num_trikes, True, 3, seed, 50, 5) not in completed_sims:
-    #             results = run_simulation(num_trikes, use_smart_scheduler=True, trike_capacity=3, seed=seed)
-    #             if results:
-    #                 all_results['simulations'].append(results)
-    #                 save_progress(all_results, data_dir)
-    
-    # # 2. Run FIFO scheduling tests with capacity 3 (for graph 4)
-    # print("\n=== Running FIFO Scheduling Tests (capacity 3) ===")
-    # for num_trikes in tricycle_counts:
-    #     for run in range(num_runs):
-    #         seed = f"graphdata{run}"
-    #         if (num_trikes, False, 3, seed, 50, 5) not in completed_sims:
-    #             results = run_simulation(num_trikes, use_smart_scheduler=False, trike_capacity=3, seed=seed)
-    #             if results:
-    #                 all_results['simulations'].append(results)
-    #                 save_progress(all_results, data_dir)
 
-    # # 3. Run capacity analysis tests (for graphs 5-7)
-    # print("\n=== Running Capacity Analysis Tests ===")
-    # for capacity in tricycle_capacities:
-    #     for num_trikes in tricycle_counts:
-    #         for run in range(num_runs):
-    #             seed = f"graphdata{run}"
-    #             if (num_trikes, True, capacity, seed, 50, 5) not in completed_sims:
-    #                 results = run_simulation(num_trikes, use_smart_scheduler=True, trike_capacity=capacity, seed=seed)
-    #                 if results:
-    #                     all_results['simulations'].append(results)
-    #                     save_progress(all_results, data_dir)
+    # Initialize progress counters
+    completed_simulations = len(all_results['simulations'])
+    group_a_completed = sum(1 for sim in all_results['simulations'] if sim['metadata'].get('seed', '').startswith('groupA_'))
+    group_b_completed = sum(1 for sim in all_results['simulations'] if sim['metadata'].get('seed', '').startswith('groupB_'))
+    group_c_completed = sum(1 for sim in all_results['simulations'] if sim['metadata'].get('seed', '').startswith('groupC_'))
+    group_d_completed = sum(1 for sim in all_results['simulations'] if sim['metadata'].get('seed', '').startswith('groupD_'))
 
-    # 4. Run serving enqueue radius analysis tests
-    print("\n=== Running Serving Enqueue Radius Analysis Tests ===")
+    # Group A: Number of tricycles analysis
+    print("\n=== Running Group A: Number of Tricycles Analysis ===")
+    for num_trikes in tricycle_counts:
+        for run in range(num_runs):
+            seed = f"groupA_{num_trikes}_{run}"
+            if (num_trikes, True, 3, seed, 50, 100, 2) not in completed_sims:
+                results = run_simulation(
+                    num_trikes,
+                    use_smart_scheduler=True,
+                    trike_capacity=3,
+                    seed=seed,
+                    s_enqueue_radius_meters=50,
+                    enqueue_radius_meters=100,
+                    maxCycles=2
+                )
+                if results:
+                    all_results['simulations'].append(results)
+                    save_progress(all_results, data_dir)
+                    completed_simulations += 1
+                    group_a_completed += 1
+                    print(f"\nProgress Update:")
+                    print(f"Group A: {group_a_completed}/{len(tricycle_counts) * num_runs} simulations completed")
+                    print(f"Overall: {completed_simulations}/{total_simulations} simulations completed ({(completed_simulations/total_simulations)*100:.1f}%)")
+
+    # Group B: Tricycle capacity analysis
+    print("\n=== Running Group B: Tricycle Capacity Analysis ===")
+    for capacity in tricycle_capacities:
+        for run in range(num_runs):
+            seed = f"groupB_{capacity}_{run}"
+            if (9, True, capacity, seed, 50, 100, 2) not in completed_sims:
+                results = run_simulation(
+                    9,  # Fixed number of tricycles
+                    use_smart_scheduler=True,
+                    trike_capacity=capacity,
+                    seed=seed,
+                    s_enqueue_radius_meters=50,
+                    enqueue_radius_meters=100,
+                    maxCycles=2
+                )
+                if results:
+                    all_results['simulations'].append(results)
+                    save_progress(all_results, data_dir)
+                    completed_simulations += 1
+                    group_b_completed += 1
+                    print(f"\nProgress Update:")
+                    print(f"Group B: {group_b_completed}/{len(tricycle_capacities) * num_runs} simulations completed")
+                    print(f"Overall: {completed_simulations}/{total_simulations} simulations completed ({(completed_simulations/total_simulations)*100:.1f}%)")
+
+    # Group C: Enqueue radius analysis
+    print("\n=== Running Group C: Enqueue Radius Analysis ===")
+    for radius in enqueue_radii:
+        for run in range(num_runs):
+            seed = f"groupC_{radius}_{run}"
+            if (9, True, 3, seed, 50, radius, 2) not in completed_sims:
+                results = run_simulation(
+                    9,  # Fixed number of tricycles
+                    use_smart_scheduler=True,
+                    trike_capacity=3,
+                    seed=seed,
+                    s_enqueue_radius_meters=50,
+                    enqueue_radius_meters=radius,
+                    maxCycles=2
+                )
+                if results:
+                    all_results['simulations'].append(results)
+                    save_progress(all_results, data_dir)
+                    completed_simulations += 1
+                    group_c_completed += 1
+                    print(f"\nProgress Update:")
+                    print(f"Group C: {group_c_completed}/{len(enqueue_radii) * num_runs} simulations completed")
+                    print(f"Overall: {completed_simulations}/{total_simulations} simulations completed ({(completed_simulations/total_simulations)*100:.1f}%)")
+
+    # Group D: Serving enqueue radius analysis
+    print("\n=== Running Group D: Serving Enqueue Radius Analysis ===")
     for radius in s_enqueue_radii:
         for run in range(num_runs):
-            seed = f"graphdata{run}"
-            if (FIXED_TRIKES, True, 3, seed, radius, 3) not in completed_sims:
+            seed = f"groupD_{radius}_{run}"
+            if (9, True, 3, seed, radius, 100, 2) not in completed_sims:
                 results = run_simulation(
-                    FIXED_TRIKES, 
-                    use_smart_scheduler=True, 
-                    trike_capacity=3, 
+                    9,  # Fixed number of tricycles
+                    use_smart_scheduler=True,
+                    trike_capacity=3,
                     seed=seed,
-                    s_enqueue_radius_meters=radius
+                    s_enqueue_radius_meters=radius,
+                    enqueue_radius_meters=100,
+                    maxCycles=2
                 )
                 if results:
                     all_results['simulations'].append(results)
                     save_progress(all_results, data_dir)
-
-    # 5. Run max cycles analysis tests
-    print("\n=== Running Max Cycles Analysis Tests ===")
-    for cycles in max_cycles:
-        for run in range(num_runs):
-            seed = f"graphdata{run}"
-            if (FIXED_TRIKES, True, 3, seed, 50, cycles) not in completed_sims:
-                results = run_simulation(
-                    FIXED_TRIKES, 
-                    use_smart_scheduler=True, 
-                    trike_capacity=3, 
-                    seed=seed,
-                    maxCycles=cycles
-                )
-                if results:
-                    all_results['simulations'].append(results)
-                    save_progress(all_results, data_dir)
+                    completed_simulations += 1
+                    group_d_completed += 1
+                    print(f"\nProgress Update:")
+                    print(f"Group D: {group_d_completed}/{len(s_enqueue_radii) * num_runs} simulations completed")
+                    print(f"Overall: {completed_simulations}/{total_simulations} simulations completed ({(completed_simulations/total_simulations)*100:.1f}%)")
 
     # Save final results
     final_file = os.path.join(data_dir, f'simulation_results_{datetime.now().strftime("%Y%m%d_%H%M%S")}.json')
@@ -227,7 +284,12 @@ def main():
     if os.path.exists(progress_file):
         os.remove(progress_file)
 
-    print(f"\nTotal simulations completed: {len(all_results['simulations'])}")
+    print(f"\nFinal Progress Summary:")
+    print(f"Group A: {group_a_completed}/{len(tricycle_counts) * num_runs} simulations completed")
+    print(f"Group B: {group_b_completed}/{len(tricycle_capacities) * num_runs} simulations completed")
+    print(f"Group C: {group_c_completed}/{len(enqueue_radii) * num_runs} simulations completed")
+    print(f"Group D: {group_d_completed}/{len(s_enqueue_radii) * num_runs} simulations completed")
+    print(f"Total simulations completed: {completed_simulations}/{total_simulations} ({(completed_simulations/total_simulations)*100:.1f}%)")
     print(f"Final results saved to: {final_file}")
 
 if __name__ == '__main__':

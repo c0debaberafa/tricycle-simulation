@@ -14,6 +14,7 @@ if __name__ == '__main__':
     
     # Simulation parameters
     S_ENQUEUE_RADIUS_METERS = 50  # Radius for enqueueing when tricycle is serving passengers
+    ENQUEUE_RADIUS_METERS = 200  # Radius for enqueueing when tricycle is not serving passengers
     MAX_CYCLES = 1  # Maximum number of cycles a tricycle can roam without picking up passengers
     
     # Create custom trike config
@@ -21,6 +22,7 @@ if __name__ == '__main__':
     trike_config.update({
         "capacity": 3,
         "s_enqueue_radius_meters": S_ENQUEUE_RADIUS_METERS,
+        "enqueue_radius_meters": ENQUEUE_RADIUS_METERS,
         "maxCycles": MAX_CYCLES
     })
     

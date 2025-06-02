@@ -64,7 +64,8 @@ defaultTrikeConfig = {
     "scheduler": smart_scheduler,
     "useMeters": True,  # Always use meters for consistency
     "maxCycles": 3,  # Maximum cycles before generating new roam path
-    "s_enqueue_radius_meters": 50  # Smaller radius for enqueueing when serving passengers
+    "s_enqueue_radius_meters": 50,  # Smaller radius for enqueueing when serving passengers
+    "enqueue_radius_meters": 200  # Default radius for enqueueing when not serving passengers
 }
 
 cache = None
@@ -86,7 +87,8 @@ class Simulator:
             useFixedHotspots = False,
             useSmartScheduler = True,
             trikeCapacity = None,
-            isRealistic = False
+            isRealistic = False,
+            enqueue_radius_meters = None
         ):
         """
         Parameters:
@@ -114,6 +116,7 @@ class Simulator:
         - useFixedHotspots: bool - if True, you must provide a list of points when running a run. Default to False
         - trikeCapacity: int - the number of passengers tricycles can accommodate at a moment
         - isRealistic: bool - always set this to True, unless you want to deal with great circle coordinate system
+        - enqueue_radius_meters: float - the radius for enqueueing when not serving passengers
         """
         self.totalTrikes = totalTrikes
         self.totalTerminals = totalTerminals
@@ -170,6 +173,9 @@ class Simulator:
             # 5.556 m/s * (1 degree/111000m) * (1s/1000ms) = 0.00005 degrees per frame
             self.trikeConfig["speed"] = 0.00005
             self.trikeConfig["useMeters"] = False
+        
+        if enqueue_radius_meters is not None:
+            self.trikeConfig["enqueue_radius_meters"] = enqueue_radius_meters
     
     def run(
             self, 
@@ -201,7 +207,8 @@ class Simulator:
                 "capacity": self.trikeConfig["capacity"],
                 "speed": self.trikeConfig["speed"],
                 "maxCycles": self.trikeConfig["maxCycles"],
-                "s_enqueue_radius_meters": self.trikeConfig["s_enqueue_radius_meters"]
+                "s_enqueue_radius_meters": self.trikeConfig["s_enqueue_radius_meters"],
+                "enqueue_radius_meters": self.trikeConfig["enqueue_radius_meters"]
             }
         }
 
@@ -276,7 +283,8 @@ class Simulator:
                     scheduler=self.trikeConfig["scheduler"],
                     useMeters=self.trikeConfig["useMeters"],
                     maxCycles=self.trikeConfig["maxCycles"],
-                    s_enqueue_radius_meters=self.trikeConfig["s_enqueue_radius_meters"]
+                    s_enqueue_radius_meters=self.trikeConfig["s_enqueue_radius_meters"],
+                    enqueue_radius_meters=self.trikeConfig["enqueue_radius_meters"]
                 )
                 
                 # Generate initial roam path
@@ -319,7 +327,8 @@ class Simulator:
                     scheduler=self.trikeConfig["scheduler"],
                     useMeters=self.trikeConfig["useMeters"],
                     maxCycles=self.trikeConfig["maxCycles"],
-                    s_enqueue_radius_meters=self.trikeConfig["s_enqueue_radius_meters"]
+                    s_enqueue_radius_meters=self.trikeConfig["s_enqueue_radius_meters"],
+                    enqueue_radius_meters=self.trikeConfig["enqueue_radius_meters"]
                 )
 
                 if in_terminal:
