@@ -111,7 +111,7 @@ def main():
             try:
                 simulation = SimulationRun(run_path)
                 simulations.append(simulation)
-                print(f"Loaded simulation with {simulation.numTrikes} tricycles, capacity {simulation.trikeCapacity}")
+                print(f"Loaded simulation with {simulation.numTrikes} tricycles, capacity {simulation.trikeCapacity}, s_radius {simulation.s_enqueue_radius}, e_radius {simulation.enqueue_radius}, maxCycles {simulation.maxCycles}")
             except Exception as e:
                 print(f"Failed to load simulation {run_dir}: {str(e)}")
                 continue
@@ -167,7 +167,7 @@ def main():
                    and x.s_enqueue_radius == 50 
                    and x.maxCycles == 2]
     if group_c_sims:
-        x_values = [x.enqueue_radius for x in group_c_sims]  # Changed from s_enqueue_radius to enqueue_radius
+        x_values = [x.enqueue_radius for x in group_c_sims]
         plot_metric(group_c_sims, x_values, "Enqueue Radius (meters)", "Enqueue Radius", "C")
         print(f"Generated Group C figures (Enqueue Radius) - {len(group_c_sims)} simulations")
         print(f"Found enqueue radii: {sorted(set(x_values))}")

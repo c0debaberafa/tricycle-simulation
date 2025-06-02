@@ -618,7 +618,10 @@ class Simulator:
                 "use_fixed_hotspots": self.useFixedHotspots,
                 "use_fixed_terminals": self.useFixedTerminals,
                 "road_passenger_chance": self.roadPassengerChance,
-                "roaming_trike_chance": self.roamingTrikeChance
+                "roaming_trike_chance": self.roamingTrikeChance,
+                "s_enqueue_radius_meters": self.trikeConfig["s_enqueue_radius_meters"],
+                "enqueue_radius_meters": self.trikeConfig["enqueue_radius_meters"],
+                "maxCycles": self.trikeConfig["maxCycles"]
             }
         }
 
