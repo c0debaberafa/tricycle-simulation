@@ -3,6 +3,7 @@ import sys
 import time
 import json
 from datetime import datetime
+import traceback
 
 # Add the generator directory to Python path
 generator_dir = os.path.dirname(os.path.abspath(__file__))
@@ -11,7 +12,21 @@ sys.path.insert(0, generator_dir)
 from scenarios.real import Simulator
 import config
 
-def run_simulation(num_trikes, use_smart_scheduler=True, trike_capacity=3, seed=None):
+def save_progress(all_results, data_dir):
+    """Save current progress to a temporary file"""
+    temp_file = os.path.join(data_dir, 'simulation_progress.json')
+    with open(temp_file, 'w') as f:
+        json.dump(all_results, f, indent=2)
+
+def load_progress(data_dir):
+    """Load progress from temporary file if it exists"""
+    temp_file = os.path.join(data_dir, 'simulation_progress.json')
+    if os.path.exists(temp_file):
+        with open(temp_file, 'r') as f:
+            return json.load(f)
+    return None
+
+def run_simulation(num_trikes, use_smart_scheduler=True, trike_capacity=3, seed=None, max_retries=10, max_wait_time=300):
     """
     Run a single simulation with the given parameters.
     
@@ -20,8 +35,10 @@ def run_simulation(num_trikes, use_smart_scheduler=True, trike_capacity=3, seed=
         use_smart_scheduler (bool): Whether to use smart scheduling or FIFO
         trike_capacity (int): Capacity of each tricycle
         seed (str): Seed string for reproducibility
+        max_retries (int): Maximum number of retries for failed simulations
+        max_wait_time (int): Maximum wait time between retries in seconds
     Returns:
-        dict: Simulation results
+        dict: Simulation results or None if all retries failed
     """
     # Common parameters
     params = {
@@ -34,28 +51,65 @@ def run_simulation(num_trikes, use_smart_scheduler=True, trike_capacity=3, seed=
         'useFixedHotspots': True,
         'useFixedTerminals': False,
         'roadPassengerChance': 1.0,
-        'roamingTrikeChance': 1.0,
-        'seed': seed
+        'roamingTrikeChance': 1.0
     }
     
-    # Create simulator instance
-    simulator = Simulator(**params)
+    attempt = 0
+    total_wait_time = 0
+    last_error = None
     
-    # Run simulation
-    print(f"\nRunning simulation with {num_trikes} tricycles (capacity: {trike_capacity}, seed: {seed})")
-    start_time = time.time()
-    try:
-        results = simulator.run(maxTime=10000, fixedHotspots=config.MAGIN_HOTSPOTS, fixedTerminals=config.MAGIN_TERMINALS)
-        end_time = time.time()
-        
-        # Add execution time to results
-        results['execution_time_seconds'] = end_time - start_time
-        
-        print(f"Simulation completed in {results['execution_time_seconds']:.2f} seconds")
-        return results
-    except Exception as e:
-        print(f"Error running simulation: {str(e)}")
-        return None
+    while attempt < max_retries:
+        try:
+            # Create simulator instance
+            simulator = Simulator(**params)
+            
+            # Run simulation
+            print(f"\nRunning simulation with {num_trikes} tricycles (capacity: {trike_capacity}, seed: {seed}, attempt: {attempt + 1}/{max_retries})")
+            start_time = time.time()
+            
+            results = simulator.run(seed=seed, maxTime=10000, fixedHotspots=config.MAGIN_HOTSPOTS, fixedTerminals=config.MAGIN_TERMINALS)
+            end_time = time.time()
+            
+            # Add execution time and metadata to results
+            results['execution_time_seconds'] = end_time - start_time
+            results['metadata'] = {
+                'num_trikes': num_trikes,
+                'use_smart_scheduler': use_smart_scheduler,
+                'trike_capacity': trike_capacity,
+                'seed': seed,
+                'attempt': attempt + 1,
+                'total_retries': attempt,
+                'total_wait_time': total_wait_time
+            }
+            
+            print(f"Simulation completed in {results['execution_time_seconds']:.2f} seconds")
+            return results
+            
+        except Exception as e:
+            last_error = e
+            print(f"Error running simulation (attempt {attempt + 1}/{max_retries}): {str(e)}")
+            
+            # Calculate wait time with exponential backoff
+            wait_time = min(5 * (2 ** attempt), max_wait_time)  # Start with 5s, double each time, but cap at max_wait_time
+            total_wait_time += wait_time
+            
+            if "OSRM" in str(e):
+                print(f"OSRM server error detected, waiting {wait_time} seconds before retry...")
+                time.sleep(wait_time)
+            else:
+                # For non-OSRM errors, wait a shorter time
+                wait_time = min(wait_time / 2, 30)  # Cap at 30 seconds for non-OSRM errors
+                print(f"Error detected, waiting {wait_time} seconds before retry...")
+                time.sleep(wait_time)
+            
+            attempt += 1
+            continue
+    
+    print("All retry attempts failed")
+    print("Last error:", str(last_error))
+    print("Full error traceback:")
+    print(traceback.format_exc())
+    return None
 
 def main():
     # Create data directory if it doesn't exist
@@ -67,42 +121,69 @@ def main():
     tricycle_capacities = [3, 4, 5, 6]
     num_runs = 5  # Number of runs per parameter combination
     
-    # Store all results
-    all_results = {
-        'timestamp': datetime.now().isoformat(),
-        'simulations': []
+    # Try to load existing progress
+    all_results = load_progress(data_dir)
+    if all_results is None:
+        all_results = {
+            'timestamp': datetime.now().isoformat(),
+            'simulations': []
+        }
+    
+    # Track completed simulations to avoid duplicates
+    completed_sims = {
+        (sim['metadata']['num_trikes'], 
+         sim['metadata']['use_smart_scheduler'], 
+         sim['metadata']['trike_capacity'], 
+         sim['metadata']['seed'])
+        for sim in all_results['simulations']
     }
     
     # 1. Run smart scheduling tests with capacity 3 (for graphs 1-3)
     print("\n=== Running Smart Scheduling Tests (capacity 3) ===")
     for num_trikes in tricycle_counts:
         for run in range(num_runs):
-            seed = f"graphdata{run}"  # Using string seeds
-            results = run_simulation(num_trikes, use_smart_scheduler=True, trike_capacity=3, seed=seed)
-            if results:  # Only append if simulation was successful
-                all_results['simulations'].append(results)
+            seed = f"graphdata{run}"
+            if (num_trikes, True, 3, seed) not in completed_sims:
+                results = run_simulation(num_trikes, use_smart_scheduler=True, trike_capacity=3, seed=seed)
+                if results:
+                    all_results['simulations'].append(results)
+                    save_progress(all_results, data_dir)
     
-    # # 2. Run FIFO scheduling tests with capacity 3 (for graph 4)
-    # print("\n=== Running FIFO Scheduling Tests (capacity 3) ===")
-    # for num_trikes in tricycle_counts:
-    #     for run in range(num_runs):
-    #         seed = f"graphdata{run}"
-    #         results = run_simulation(num_trikes, use_smart_scheduler=False, trike_capacity=3, seed=seed)
-    #         if results:
-    #             all_results['simulations'].append(results)
+    # 2. Run FIFO scheduling tests with capacity 3 (for graph 4)
+    print("\n=== Running FIFO Scheduling Tests (capacity 3) ===")
+    for num_trikes in tricycle_counts:
+        for run in range(num_runs):
+            seed = f"graphdata{run}"
+            if (num_trikes, False, 3, seed) not in completed_sims:
+                results = run_simulation(num_trikes, use_smart_scheduler=False, trike_capacity=3, seed=seed)
+                if results:
+                    all_results['simulations'].append(results)
+                    save_progress(all_results, data_dir)
 
-    # # 3. Run capacity analysis tests (for graphs 5-7)
-    # print("\n=== Running Capacity Analysis Tests ===")
-    # for capacity in tricycle_capacities:
-    #     for num_trikes in tricycle_counts:
-    #         for run in range(num_runs):
-    #             seed = f"graphdata{run}"
-    #             results = run_simulation(num_trikes, use_smart_scheduler=True, trike_capacity=capacity, seed=seed)
-    #             if results:
-    #                 all_results['simulations'].append(results)
+    # 3. Run capacity analysis tests (for graphs 5-7)
+    print("\n=== Running Capacity Analysis Tests ===")
+    for capacity in tricycle_capacities:
+        for num_trikes in tricycle_counts:
+            for run in range(num_runs):
+                seed = f"graphdata{run}"
+                if (num_trikes, True, capacity, seed) not in completed_sims:
+                    results = run_simulation(num_trikes, use_smart_scheduler=True, trike_capacity=capacity, seed=seed)
+                    if results:
+                        all_results['simulations'].append(results)
+                        save_progress(all_results, data_dir)
+
+    # Save final results
+    final_file = os.path.join(data_dir, f'simulation_results_{datetime.now().strftime("%Y%m%d_%H%M%S")}.json')
+    with open(final_file, 'w') as f:
+        json.dump(all_results, f, indent=2)
+    
+    # Clean up progress file
+    progress_file = os.path.join(data_dir, 'simulation_progress.json')
+    if os.path.exists(progress_file):
+        os.remove(progress_file)
 
     print(f"\nTotal simulations completed: {len(all_results['simulations'])}")
-    print("All test data has been saved to the data/real directory")
+    print(f"Final results saved to: {final_file}")
 
 if __name__ == '__main__':
     main() 
