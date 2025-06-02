@@ -94,11 +94,11 @@
 }
 
 .event-log-entry[data-event-type="LOAD"] {
-    border-left-color: #FF9800;
+    border-left-color: #fea400;
 }
 
 .event-log-entry[data-event-type="DROP-OFF"] {
-    border-left-color: #9C27B0;
+    border-left-color: #018001;
 }
 
 .event-log-entry[data-event-type="WAIT"] {
@@ -106,7 +106,7 @@
 }
 
 .event-log-entry[data-event-type="ENQUEUE"] {
-    border-left-color: #F44336;
+    border-left-color: #ff0000;
 }
 
 .event-log-entry[data-event-type="NEW_ROAM_PATH"] {
@@ -219,53 +219,27 @@
     position: absolute;
     top: 10px;
     right: 10px;
-    display: flex;
-    flex-direction: column;
-    gap: 5px;
     z-index: 1000;
     background: rgba(0, 0, 0, 0.7);
     padding: 10px;
     border-radius: 4px;
 }
 
-.frame-time-slider {
-    width: 200px;
-    height: 20px;
-    -webkit-appearance: none;
-    background: rgba(255, 255, 255, 0.1);
-    border-radius: 4px;
-    outline: none;
-}
-
-.frame-time-slider::-webkit-slider-thumb {
-    -webkit-appearance: none;
-    appearance: none;
-    width: 20px;
-    height: 20px;
-    background: #4CAF50;
-    border-radius: 50%;
-    cursor: pointer;
-}
-
-.frame-time-slider::-moz-range-thumb {
-    width: 20px;
-    height: 20px;
-    background: #4CAF50;
-    border-radius: 50%;
-    cursor: pointer;
-    border: none;
+.frame-info {
+    display: flex;
+    align-items: center;
+    gap: 10px;
 }
 
 #frameCounter {
     color: white;
-    padding: 5px 10px;
     font-family: monospace;
     font-size: 14px;
-    text-align: center;
 }
 
 .control-button {
-    text-align: center;
+    display: flex;
+    align-items: center;
 }
 
 .control-button a {
@@ -286,9 +260,15 @@
     background: #45a049;
 }
 
+/* Remove old slider styles */
+.frame-time-slider {
+    display: none;
+}
+
 /* Tricycle Status Panel */
 .status-group.default {
     background-color: rgba(0, 0, 255, 0.2);
+    color: green;
 }
 
 .status-group.enqueueing {

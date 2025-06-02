@@ -51,18 +51,6 @@ function initializeSimulation() {
     // Clear existing visualization using VisualManager
     visualManager.clearAllMarkers();
 
-    // Initialize frame time slider
-    const frameTimeSlider = document.getElementById('frameTimeSlider');
-    if (frameTimeSlider) {
-        frameTimeSlider.addEventListener('input', function(e) {
-            const value = parseInt(e.target.value);
-            // Update the simulation frame time (time between simulation updates)
-            TIMING_CONFIG.simulationFrameTime = value;
-            // Keep the frame duration constant for smooth animation
-            TIMING_CONFIG.frameDuration = 16; // ~60fps for smooth animation
-        });
-    }
-
     // Initialize play/pause button
     const controlButton = document.querySelector('.control-button a');
     if (controlButton) {

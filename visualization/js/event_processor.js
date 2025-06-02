@@ -119,11 +119,22 @@ export class EventProcessor {
                 // Add to visual manager first
                 this.visualManager.addMarker('trike', trike.id, marker);
                 
-                // Start animation after a short delay to ensure proper initialization
-                setTimeout(() => {
-                    console.log(`Starting animation for trike ${trike.id}`);
-                    marker._startAnimation();
-                }, 100);
+                // Wait for next frame to ensure all initialization is complete
+                requestAnimationFrame(() => {
+                    // Double check that the marker is properly initialized
+                    if (window.INITIALIZED_TRIKES.has(trike.id)) {
+                        console.log(`Starting animation for trike ${trike.id}`);
+                        marker._startAnimation();
+                    } else {
+                        console.error(`Trike ${trike.id} not properly initialized, retrying...`);
+                        // Retry after a short delay if initialization failed
+                        setTimeout(() => {
+                            if (window.INITIALIZED_TRIKES.has(trike.id)) {
+                                marker._startAnimation();
+                            }
+                        }, 100);
+                    }
+                });
             });
 
             // Update UI
@@ -140,7 +151,7 @@ export class EventProcessor {
                             width: 12px;
                             height: 12px;
                             border-radius: 50%;
-                            border: 4px solid #FF0000;
+                            border: 4px solid #FFFFFF;
                             background-color: transparent;
                         "></div>`
                     })
@@ -394,7 +405,9 @@ export class EventProcessor {
 
         const eventPoint = marker.path[marker.currentPathIndex];
         if (eventPoint && Array.isArray(eventPoint) && eventPoint.length === 2) {
-            marker.setLatLng(eventPoint);
+            // Convert OSRM [lng, lat] to Leaflet [lat, lng] for display
+            const leafletPosition = [eventPoint[1], eventPoint[0]];
+            marker.setLatLng(leafletPosition);
             
             // Convert [lng, lat] to [lat, lng] for createEventMarker
             const latLng = [eventPoint[1], eventPoint[0]];

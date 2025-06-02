@@ -217,16 +217,16 @@ L.MovingMarker = L.Marker.extend({
                     
                     // Update visual elements
                     if (window.visualManager) {
-                        // Update enqueue lines with current position
-                        const enqueueLines = window.visualManager.markers.enqueueLines;
-                        enqueueLines.forEach((lineData, passengerId) => {
-                            if (lineData.trikeId === this.id) {
-                                window.visualManager.updateEnqueueLines(this.id, this.getLatLng());
-                            }
-                        });
-                        window.visualManager.updateTrikeTooltip(this, this.id, this.passengers);
-                        // Update trike position with current path index
+                        // Update trike position with current path index first
                         window.visualManager.updateTrikePosition(this.id, leafletPosition, this.currentPathIndex);
+                        
+                        // Only update enqueue lines after the trike has moved
+                        const enqueueLines = window.visualManager.markers.enqueueLines;
+                        if (enqueueLines.size > 0) {
+                            window.visualManager.updateEnqueueLines(this.id, this.getLatLng());
+                        }
+                        
+                        window.visualManager.updateTrikeTooltip(this, this.id, this.passengers);
                     }
                     
                     // Move to next point

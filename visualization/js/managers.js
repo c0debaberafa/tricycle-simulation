@@ -378,7 +378,25 @@ export class VisualManager {
             sortedTricycles.forEach(num => {
                 const tricycle = document.createElement('div');
                 tricycle.className = 'tricycle-id';
-                tricycle.textContent = num;
+                
+                // Get the trike marker to check for passengers
+                const trikeId = `trike_${num}`;
+                const trikeMarker = this.getMarker('trike', trikeId);
+                let passengerInfo = '';
+                
+                if (trikeMarker && trikeMarker.getTooltip) {
+                    const tooltip = trikeMarker.getTooltip();
+                    if (tooltip && tooltip.getContent) {
+                        const content = tooltip.getContent();
+                        // Extract passenger numbers from tooltip content
+                        const passengerMatch = content.match(/P\d+/g);
+                        if (passengerMatch) {
+                            passengerInfo = ` (${passengerMatch.join(' ')})`;
+                        }
+                    }
+                }
+                
+                tricycle.textContent = `T${num}${passengerInfo}`;
                 group.appendChild(tricycle);
             });
         });
@@ -444,7 +462,7 @@ export class VisualManager {
         let color;
         switch(status) {
             case 'DEFAULT':
-                color = 'blue'; // Blue
+                color = 'green';
                 break;
             case 'ENQUEUEING':
                 color = 'red'; // Red
@@ -472,14 +490,15 @@ export class VisualManager {
 
     // Add method to update trike tooltip
     updateTrikeTooltip(marker, id, passengers) {
+        const trikeNum = id.split('_')[1];
         const passengerList = Array.from(passengers).sort((a, b) => {
             const numA = parseInt(a.split('_')[1]);
             const numB = parseInt(b.split('_')[1]);
             return numA - numB;
-        }).join(' ');
+        }).map(p => `P${p.split('_')[1]}`).join(' ');
         
         marker.unbindTooltip();
-        marker.bindTooltip(`${id}: ${passengerList}`, {
+        marker.bindTooltip(`T${trikeNum}: ${passengerList}`, {
             permanent: false,
             direction: 'top'
         });
