@@ -116,11 +116,15 @@
 #passengerStatus {
     height: 100%;
     overflow-y: auto;
+    overflow-x: auto;
+    white-space: nowrap;
 }
 
 #tricycleStatus {
     height: 100%;
     overflow-y: auto;
+    overflow-x: auto;
+    white-space: nowrap;
 }
 
 #metadataContent {
@@ -134,6 +138,7 @@
     height: 100%;
     gap: 10px;
     padding: 10px;
+    min-width: max-content;
 }
 
 .status-labels {
@@ -142,6 +147,11 @@
     gap: 10px;
     font-weight: bold;
     color: #fff;
+    position: sticky;
+    left: 0;
+    background: black;
+    padding-right: 10px;
+    z-index: 1;
 }
 
 .status-content {
@@ -150,15 +160,17 @@
     gap: 10px;
     flex-grow: 1;
     overflow-y: auto;
+    min-width: max-content;
 }
 
 .status-group {
     display: flex;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     gap: 5px;
     min-height: 24px;
     padding: 2px;
     border-radius: 4px;
+    overflow-x: auto;
 }
 
 .status-group.waiting {
@@ -272,4 +284,25 @@
 
 .control-button a:hover {
     background: #45a049;
+}
+
+/* Tricycle Status Panel */
+.status-group.default {
+    background-color: rgba(0, 0, 255, 0.2);
+}
+
+.status-group.enqueueing {
+    background-color: rgba(255, 0, 0, 0.2);
+}
+
+.status-group.serving {
+    background-color: rgba(255, 165, 0, 0.2);
+}
+
+.tricycle-id {
+    background-color: rgba(255, 255, 255, 0.1);
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 12px;
+    color: #fff;
 }

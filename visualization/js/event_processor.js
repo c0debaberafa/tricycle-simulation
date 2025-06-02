@@ -184,6 +184,20 @@ export class EventProcessor {
             this.visualManager.updatePassengerStatus(this.stateManager.passengerStates);
         });
 
+        // Add tricycle state update handler
+        this.registerHandler('UPDATE_TRICYCLE', (event) => {
+            const { tricycleId, newState } = event;
+            
+            // Update tricycle state
+            this.stateManager.updateTricycleState(tricycleId, newState);
+            
+            // Update marker color
+            const marker = this.visualManager.getMarker('trike', tricycleId);
+            if (marker) {
+                this.visualManager.updateTrikeColor(marker, newState);
+            }
+        });
+
         // Combine marker management handlers
         this.registerHandler('MANAGE_MARKER', (event) => {
             const { type, id, marker, path, isTrike } = event;
@@ -414,6 +428,12 @@ export class EventProcessor {
                         trikeId: marker.id,
                         passengers: marker.passengers
                     });
+                    // Update tricycle state to SERVING
+                    this.processEvent({
+                        type: 'UPDATE_TRICYCLE',
+                        tricycleId: marker.id,
+                        newState: 'SERVING'
+                    });
                     break;
 
                 case "DROP-OFF":
@@ -442,6 +462,12 @@ export class EventProcessor {
                         trikeId: marker.id,
                         passengers: marker.passengers
                     });
+                    // Update tricycle state based on remaining passengers
+                    this.processEvent({
+                        type: 'UPDATE_TRICYCLE',
+                        tricycleId: marker.id,
+                        newState: marker.passengers.size > 0 ? 'SERVING' : 'DEFAULT'
+                    });
                     break;
 
                 case "ENQUEUE":
@@ -469,6 +495,12 @@ export class EventProcessor {
                         newState: 'ENQUEUED',
                         trikeId: marker.id,
                         passengers: marker.passengers
+                    });
+                    // Update tricycle state to ENQUEUEING
+                    this.processEvent({
+                        type: 'UPDATE_TRICYCLE',
+                        tricycleId: marker.id,
+                        newState: 'ENQUEUEING'
                     });
                     break;
             }

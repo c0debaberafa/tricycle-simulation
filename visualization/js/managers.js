@@ -13,15 +13,22 @@ const REFRESH_TIME = 100; // Time between frames in milliseconds
 
 // ===== State Management =====
 export class StateManager {
-    constructor() {
+    constructor(visualManager) {
+        this.visualManager = visualManager;
         this.passengerStates = {
             WAITING: new Set(),
             ENQUEUED: new Set(),
             ONBOARD: new Set(),
             COMPLETED: new Set()
         };
-        this.trikeStates = new Map();
-        this.maxPathIndex = 0;  // Track maximum path index
+
+        this.tricycleStates = {
+            DEFAULT: new Set(),
+            ENQUEUEING: new Set(),
+            SERVING: new Set()
+        };
+
+        this.maxPathIndex = 0;
     }
 
     updatePassengerState(passengerId, newState) {
@@ -45,17 +52,30 @@ export class StateManager {
         Object.keys(this.passengerStates).forEach(key => {
             this.passengerStates[key].clear();
         });
-        this.trikeStates.clear();
+        // Reset tricycle states
+        Object.keys(this.tricycleStates).forEach(key => {
+            this.tricycleStates[key].clear();
+        });
         this.maxPathIndex = 0;  // Reset max path index
     }
 
     // Add method to track trike passengers
     updateTrikePassengers(trikeId, passengers) {
-        this.trikeStates.set(trikeId, new Set(passengers));
+        // Remove from all states first
+        Object.keys(this.tricycleStates).forEach(key => {
+            this.tricycleStates[key].delete(trikeId);
+        });
+        
+        // Add to appropriate state based on passengers
+        if (passengers && passengers.size > 0) {
+            this.tricycleStates.SERVING.add(trikeId);
+        } else {
+            this.tricycleStates.DEFAULT.add(trikeId);
+        }
     }
 
     getTrikePassengers(trikeId) {
-        return this.trikeStates.get(trikeId) || new Set();
+        return this.tricycleStates.get(trikeId) || new Set();
     }
 
     // Add method to validate event
@@ -76,6 +96,15 @@ export class StateManager {
     // Add method to get max path index
     getMaxPathIndex() {
         return this.maxPathIndex;
+    }
+
+    updateTricycleState(tricycleId, newState) {
+        // Remove from all states first
+        Object.values(this.tricycleStates).forEach(set => set.delete(tricycleId));
+        // Add to new state
+        this.tricycleStates[newState].add(tricycleId);
+        // Update the display immediately
+        this.visualManager.updateTricycleStatus(this.tricycleStates);
     }
 }
 
@@ -291,6 +320,70 @@ export class VisualManager {
         });
     }
 
+    updateTricycleStatus(tricycleStates) {
+        const statusPanel = document.getElementById('tricycle-status');
+        if (!statusPanel) return;
+
+        // Create status rows if they don't exist
+        if (!statusPanel.querySelector('.status-rows')) {
+            const statusRows = document.createElement('div');
+            statusRows.className = 'status-rows';
+            
+            // Create labels
+            const labels = document.createElement('div');
+            labels.className = 'status-labels';
+            labels.innerHTML = `
+                <div>DEFAULT</div>
+                <div>ENQUEUEING</div>
+                <div>SERVING</div>
+            `;
+            statusRows.appendChild(labels);
+
+            // Create content
+            const content = document.createElement('div');
+            content.className = 'status-content';
+            content.innerHTML = `
+                <div class="status-group default"></div>
+                <div class="status-group enqueueing"></div>
+                <div class="status-group serving"></div>
+            `;
+            statusRows.appendChild(content);
+
+            statusPanel.appendChild(statusRows);
+        }
+
+        // Update each status group
+        const groups = {
+            DEFAULT: statusPanel.querySelector('.default'),
+            ENQUEUEING: statusPanel.querySelector('.enqueueing'),
+            SERVING: statusPanel.querySelector('.serving')
+        };
+
+        // Clear existing content
+        Object.values(groups).forEach(group => {
+            if (group) group.innerHTML = '';
+        });
+
+        // Add tricycles to their respective groups
+        Object.entries(tricycleStates).forEach(([state, tricycles]) => {
+            const group = groups[state];
+            if (!group) return;
+
+            // Convert tricycle IDs to numbers and sort them
+            const sortedTricycles = Array.from(tricycles)
+                .map(id => parseInt(id.replace('trike_', '')))
+                .sort((a, b) => a - b);
+
+            // Create tricycle elements
+            sortedTricycles.forEach(num => {
+                const tricycle = document.createElement('div');
+                tricycle.className = 'tricycle-id';
+                tricycle.textContent = num;
+                group.appendChild(tricycle);
+            });
+        });
+    }
+
     reset() {
         // Remove all markers
         Object.values(this.markers).forEach(markerMap => {
@@ -350,26 +443,17 @@ export class VisualManager {
     updateTrikeColor(marker, status) {
         let color;
         switch(status) {
-            case 0: // IDLE
-                color = '#0000FF'; // Blue
+            case 'DEFAULT':
+                color = 'blue'; // Blue
                 break;
-            case 1: // SERVING
-                color = '#FFA500'; // Orange
+            case 'ENQUEUEING':
+                color = 'red'; // Red
                 break;
-            case 2: // TERMINAL
-                color = '#0000FF'; // Blue
-                break;
-            case 3: // ROAMING
-                color = '#0000FF'; // Blue
-                break;
-            case 4: // RETURNING
-                color = '#0000FF'; // Blue
-                break;
-            case 5: // ENQUEUING
-                color = '#FF0000'; // Red
+            case 'SERVING':
+                color = 'orange'; // Orange
                 break;
             default:
-                color = '#0000FF'; // Default to blue
+                color = 'blue'; // Default to blue
         }
 
         const markerIcon = L.divIcon({
@@ -688,5 +772,5 @@ export class VisualManager {
 }
 
 // Create singleton instances
-export const stateManager = new StateManager();
-export const visualManager = new VisualManager(); 
+export const visualManager = new VisualManager();
+export const stateManager = new StateManager(visualManager); 
