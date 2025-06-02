@@ -120,6 +120,15 @@ export class VisualManager {
     }
 
     // Enqueue Line Management
+    removeEnqueueLine(passengerId) {
+        const lineData = this.markers.enqueueLines.get(passengerId);
+        if (lineData && lineData.line) {
+            console.log(`Removing enqueue line for passenger ${passengerId}`);
+            lineData.line.remove();
+            this.markers.enqueueLines.delete(passengerId);
+        }
+    }
+
     createEnqueueLine(trikeId, passengerId, trikePos, passengerPos) {
         // Validate all inputs
         if (!trikeId || !passengerId) {
@@ -138,29 +147,45 @@ export class VisualManager {
             return;
         }
 
-        // Check if line already exists
-        if (this.markers.enqueueLines.has(passengerId)) {
-            console.log(`Enqueue line already exists for passenger ${passengerId}`);
+        // Check if passenger's appear marker exists
+        const passengerMarker = this.getMarker('appear', passengerId);
+        if (!passengerMarker) {
+            // For initial enqueue events, wait a frame for appear markers to be created
+            setTimeout(() => {
+                const delayedMarker = this.getMarker('appear', passengerId);
+                if (delayedMarker) {
+                    this.createEnqueueLine(trikeId, passengerId, trikePos, passengerPos);
+                }
+            }, 0);
             return;
         }
 
-        console.log(`Creating enqueue line for passenger ${passengerId} between:`, {
-            trike: [trikePos.lat, trikePos.lng],
-            passenger: [passengerPos.lat, passengerPos.lng]
+        // Check if this trike already has an enqueue line
+        let existingPassengerId = null;
+        this.markers.enqueueLines.forEach((lineData, pid) => {
+            if (lineData.trikeId === trikeId) {
+                existingPassengerId = pid;
+            }
         });
 
-        // Create the line with exact marker positions
+        // If this trike already has an enqueue line, remove it first
+        if (existingPassengerId) {
+            this.removeEnqueueLine(existingPassengerId);
+        }
+
+        // Create and store the enqueue line
         const line = L.polyline([trikePos, passengerPos], {
             color: 'red',
-            weight: 2,
-            opacity: 0.5,
+            weight: 4,
+            opacity: 0.8,
             dashArray: '5, 10',
-            interactive: false  // Make line non-interactive
+            interactive: false
         }).addTo(map);
-        
+
         this.markers.enqueueLines.set(passengerId, {
             trikeId: trikeId,
-            line: line
+            line: line,
+            lastUpdate: Date.now()
         });
 
         // Update trike color to red (status 5 = ENQUEUING)
@@ -170,46 +195,29 @@ export class VisualManager {
         }
     }
 
-    updateEnqueueLine(passengerId, trikePos, passengerPos) {
-        if (!isValidCoordinates([trikePos.lat, trikePos.lng]) || 
-            !isValidCoordinates([passengerPos.lat, passengerPos.lng])) {
-            console.error(`Invalid coordinates for updating enqueue line:`, { trikePos, passengerPos });
-            return;
-        }
-
-        const lineData = this.markers.enqueueLines.get(passengerId);
-        if (lineData && lineData.line) {
-            lineData.line.setLatLngs([trikePos, passengerPos]);
-        }
-    }
-
-    removeEnqueueLine(passengerId) {
-        const lineData = this.markers.enqueueLines.get(passengerId);
-        if (lineData) {
-            lineData.line.remove();
-            this.markers.enqueueLines.delete(passengerId);
-        }
-    }
-
     updateEnqueueLines(trikeId, trikePos) {
         if (!trikePos || !isValidCoordinates([trikePos.lat, trikePos.lng])) {
             console.warn(`Invalid trike position for updating enqueue lines:`, trikePos);
             return;
         }
 
+        // Find and update the enqueue line for this trike
         this.markers.enqueueLines.forEach((lineData, passengerId) => {
-            if (lineData.trikeId === trikeId) {
+            if (lineData.trikeId === trikeId && lineData.line) {
                 const passengerMarker = this.getMarker('appear', passengerId);
-                if (passengerMarker) {
-                    const passengerPos = passengerMarker.getLatLng();
-                    if (passengerPos && isValidCoordinates([passengerPos.lat, passengerPos.lng])) {
-                        if (lineData.line) {
-                            // Update line with exact marker positions
-                            lineData.line.setLatLngs([trikePos, passengerPos]);
-                        }
-                    } else {
-                        console.warn(`Invalid passenger position for updating enqueue line:`, passengerPos);
-                    }
+                if (!passengerMarker) {
+                    // Passenger has been loaded, remove the enqueue line
+                    this.removeEnqueueLine(passengerId);
+                    return;
+                }
+
+                const passengerPos = passengerMarker.getLatLng();
+                if (passengerPos && isValidCoordinates([passengerPos.lat, passengerPos.lng])) {
+                    lineData.line.setLatLngs([trikePos, passengerPos]);
+                    lineData.lastUpdate = Date.now();
+                } else {
+                    // Remove line if passenger position is invalid
+                    this.removeEnqueueLine(passengerId);
                 }
             }
         });
@@ -411,13 +419,8 @@ export class VisualManager {
         let message = `[Frame ${time}] `;
         
         // Add entity type prefix
-        if (id.startsWith('trike')) {
-            message += `🚲 ${id}: `;
-        } else if (id.startsWith('passenger')) {
-            message += `👤 ${id}: `;
-        } else {
-            message += `${id}: `;
-        }
+        message += `${id}: `;
+
         
         // Add event type with appropriate emoji
         switch (type) {
@@ -429,6 +432,9 @@ export class VisualManager {
                 break;
             case 'ENQUEUE':
                 message += '⏳ ENQUEUE';
+                if (data && typeof data === 'string') {
+                    message += ` ${data}`;
+                }
                 break;
             case 'MOVE':
                 message += `🚶 MOVE`;
@@ -469,22 +475,22 @@ export class VisualManager {
         eventLog.scrollTop = eventLog.scrollHeight;
         
         // Debug logging
-        console.log('Logged event:', {
-            time,
-            id,
-            type,
-            data,
-            message
-        });
+        // console.log('Logged event:', {
+        //     time,
+        //     id,
+        //     type,
+        //     data,
+        //     message
+        // });
     }
 
     // Add method to create event marker
     createEventMarker(lat, lng, message, id) {
-        console.log('Creating event marker:', { lat, lng, message, id });
+        // console.log('Creating event marker:', { lat, lng, message, id });
         
         // Only skip enqueue events, not passenger appear events
         if (message.includes("ENQUEUE")) {
-            console.log('Skipping ENQUEUE event');
+            // console.log('Skipping ENQUEUE event');
             return null;
         }
 
@@ -508,14 +514,14 @@ export class VisualManager {
         const isEnqueue = message.includes("ENQUEUE") && id.startsWith("passenger");
         const isReset = message.includes("RESET") && id.startsWith("passenger");
 
-        console.log('Event type detection:', {
-            isLoad,
-            isDropoff,
-            isPassengerAppear,
-            isTrikeAppear,
-            isEnqueue,
-            isReset
-        });
+        // console.log('Event type detection:', {
+        //     isLoad,
+        //     isDropoff,
+        //     isPassengerAppear,
+        //     isTrikeAppear,
+        //     isEnqueue,
+        //     isReset
+        // });
 
         let markerColor;
         if (isPassengerAppear) {

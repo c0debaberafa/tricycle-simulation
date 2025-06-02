@@ -338,6 +338,10 @@ L.MovingMarker = L.Marker.extend({
         this.status = status;
         if (window.visualManager) {
             window.visualManager.updateTrikeColor(this, status);
+            // Clean up enqueue lines when status changes from ENQUEUING
+            if (this.status !== 5) { // 5 is ENQUEUING status
+                window.visualManager.cleanupTrikeEnqueueLines(this.id);
+            }
         }
     },
 

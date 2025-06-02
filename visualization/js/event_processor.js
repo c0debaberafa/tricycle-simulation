@@ -515,21 +515,21 @@ export class EventProcessor {
 
     // Add method to check and process trike events every frame
     checkTrikeEvents(timestamp) {
-        console.log('checkTrikeEvents called with timestamp:', timestamp);
+        // console.log('checkTrikeEvents called with timestamp:', timestamp);
         
         // Get all trike markers
         const trikeMarkers = Array.from(this.visualManager.markers.trike.values());
-        console.log('Found trike markers:', trikeMarkers.length);
+        // console.log('Found trike markers:', trikeMarkers.length);
         
         trikeMarkers.forEach(marker => {
-            console.log('Checking events for trike:', marker.id);
+            // console.log('Checking events for trike:', marker.id);
             if (!marker.events || !Array.isArray(marker.events)) {
-                console.log('No events array for trike:', marker.id);
+                // console.log('No events array for trike:', marker.id);
                 return;
             }
             
-            console.log('Events for trike:', marker.id, marker.events);
-            console.log('Current event index:', marker.currentEventIndex);
+            // console.log('Events for trike:', marker.id, marker.events);
+            // console.log('Current event index:', marker.currentEventIndex);
             
             // Check all events that should occur at this timestamp
             while (marker.currentEventIndex < marker.events.length) {
@@ -540,25 +540,25 @@ export class EventProcessor {
                     continue;
                 }
 
-                console.log('Checking event:', event);
-                console.log('Event time:', event.time, 'Current timestamp:', timestamp);
+                // console.log('Checking event:', event);
+                // console.log('Event time:', event.time, 'Current timestamp:', timestamp);
 
                 // Check if this event should be processed at this timestamp
                 if (event.time === timestamp) {
-                    console.log(`Processing event for ${marker.id} at time ${timestamp}:`, event);
+                    // console.log(`Processing event for ${marker.id} at time ${timestamp}:`, event);
                     
-                    // For LOAD and DROP-OFF events, log with passenger ID
+                    // For LOAD and DROP-OFF events, log with trike ID
                     if (event.type === "LOAD" || event.type === "DROP-OFF") {
-                        console.log('Logging LOAD/DROP-OFF event with passenger ID:', event.data);
-                        // Log the event with passenger ID
+                        // console.log('Logging LOAD/DROP-OFF event with trike ID:', marker.id);
+                        // Log the event with trike ID
                         this.visualManager.logEvent(
                             timestamp,
-                            event.data,  // Use passenger ID
+                            marker.id,  // Use trike ID
                             event.type,
-                            marker.id    // Use trike ID as data
+                            event.data  // Use passenger ID as data
                         );
                     } else if (event.type === "APPEAR") {
-                        console.log('Logging APPEAR event for:', marker.id);
+                        // console.log('Logging APPEAR event for:', marker.id);
                         // Log appear events with the entity's ID
                         this.visualManager.logEvent(
                             timestamp,
@@ -567,7 +567,7 @@ export class EventProcessor {
                             event.data
                         );
                     } else if (event.type !== "MOVE" && event.type !== "WAIT") {
-                        console.log('Logging other event:', event.type, 'for trike:', marker.id);
+                        // console.log('Logging other event:', event.type, 'for trike:', marker.id);
                         // Log other events (except MOVE and WAIT) with trike ID
                         this.visualManager.logEvent(
                             timestamp,
@@ -580,11 +580,11 @@ export class EventProcessor {
                     // Then handle the event
                     this.handleEvent(marker, event);
                 } else if (event.time > timestamp) {
-                    console.log('Event time is in the future, stopping processing');
+                    // console.log('Event time is in the future, stopping processing');
                     // If we hit an event that's not for this frame, stop processing
                     break;
                 } else {
-                    console.log('Skipping past event');
+                    // console.log('Skipping past event');
                     // Skip past events
                     marker.currentEventIndex++;
                 }
