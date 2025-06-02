@@ -234,7 +234,7 @@ class Simulator:
         if self.useFixedTerminals:
             for y,x in fixedTerminals:
                 terminal_loc = entities.Point(x,y)
-                print("Generated Terminal at", terminal_loc, flush=True)
+                # print("Generated Terminal at", terminal_loc, flush=True)
                 terminal = entities.Terminal(
                     location=terminal_loc,
                     capacity=20
@@ -243,7 +243,7 @@ class Simulator:
         else:
             for idx in range(self.totalTerminals):
                 terminal_loc = gen_random_valid_point()
-                print("Generated Terminal at", terminal_loc, flush=True)
+                # print("Generated Terminal at", terminal_loc, flush=True)
                 terminal = entities.Terminal(
                     location=terminal_loc,
                     capacity=100
@@ -273,9 +273,11 @@ class Simulator:
                 
                 # Generate initial roam path
                 if trike.newRoamPath(0):  # Pass current_time=0
-                    print(f"Generated {trike.id} with initial roam path at {start_hotspot.toTuple()}", flush=True)
+                    # print(f"Generated {trike.id} with initial roam path at {start_hotspot.toTuple()}", flush=True)
+                    pass
                 else:
-                    print(f"Failed to generate initial roam path for {trike.id}", flush=True)
+                    # print(f"Failed to generate initial roam path for {trike.id}", flush=True)
+                    pass
             else:
                 # Generate non-roaming tricycles at terminals
                 if len(self.terminalTrikeDistrib):
@@ -310,7 +312,7 @@ class Simulator:
                 if in_terminal:
                     in_terminal.addTricycle(trike)
 
-                print("Generated {} at {}".format(trike.id, trike_source.toTuple()), flush=True)
+                # print("Generated {} at {}".format(trike.id, trike_source.toTuple()), flush=True)
 
             map.addTricycle(trike)
             tricycles.append(trike)
@@ -385,7 +387,7 @@ class Simulator:
                     in_terminal.addPassenger(passenger)
                 map.addPassenger(passenger)  # Add all passengers to map
 
-            print("Generated {} at {} going to {}".format(passenger.id, passenger_source.toTuple(), passenger_dest.toTuple()), flush=True)
+            # print("Generated {} at {} going to {}".format(passenger.id, passenger_source.toTuple(), passenger_dest.toTuple()), flush=True)
 
             passengers.append(passenger)
             passenger_id += 1
@@ -396,7 +398,7 @@ class Simulator:
         last_active = [-1]
 
         def process_passenger(passenger: entities.Passenger, trike: entities.Tricycle):
-            print("Passenger loaded", passenger.id, "by", trike.id, flush=True)
+            # print("Passenger loaded", passenger.id, "by", trike.id, flush=True)
             passenger.pickupTime = cur_time[0]
             passenger.status = PassengerStatus.ONBOARD
 
@@ -410,10 +412,11 @@ class Simulator:
                 if not trike.active:
                     continue
                 # Only roaming tricycles should look for passengers on the road
-                if trike.isRoaming:
+                if trike.isRoaming or trike.status == TricycleStatus.SERVING:
                     p = trike.enqueueNearbyPassenger(cur_time[0])
                     if p:
-                        print(f"----Detected passenger {p.id} for {trike.id}", flush=True)
+                        # print(f"----Detected passenger {p.id} for {trike.id}", flush=True)
+                        pass
             
             # 2. Handle offloading/loading
             for trike in tricycles:
@@ -424,7 +427,8 @@ class Simulator:
                 offloaded = list(trike.tryOffload(cur_time[0]))
 
                 for passenger in offloaded:
-                    print("----Offloaded", passenger.id, trike.id, flush=True)
+                    # print("----Offloaded", passenger.id, trike.id, flush=True)
+                    pass
                 if offloaded:
                     last_active[0] = cur_time[0]
 
@@ -432,7 +436,7 @@ class Simulator:
                 loaded: list[entities.Passenger] = trike.tryLoad(cur_time[0])
 
                 for passenger in loaded:
-                    print("----Loaded", passenger.id, trike.id, flush=True)
+                    # print("----Loaded", passenger.id, trike.id, flush=True)
                     process_passenger(passenger, trike)
                 
             # 3. Move tricycles
@@ -447,20 +451,23 @@ class Simulator:
                         offloaded = list(trike.tryOffload(cur_time[0]))
 
                         for passenger in offloaded:
-                            print("----Offloaded", passenger.id, trike.id, flush=True)
+                            # print("----Offloaded", passenger.id, trike.id, flush=True)
+                            pass
                         if offloaded:
                             last_active[0] = cur_time[0]
 
                         if trike.hasPassenger():
-                            print("----Trike didn't move. Will load next passenger", trike.id, flush=True)
+                            # print("----Trike didn't move. Will load next passenger", trike.id, flush=True)
                             p = trike.scheduleNextPassenger() 
                             if p is not None:
-                                print("--------", p.id)
+                                # print("--------", p.id)
+                                pass
                             else:
-                                print("--------No passenger found")
+                                # print("--------No passenger found")
+                                pass
 
                         elif not trike.isRoaming:
-                            print("----Trike didnt move. Attempting to go to nearest terminal", trike.id, flush=True)
+                            # print("----Trike didnt move. Attempting to go to nearest terminal", trike.id, flush=True)
                             nearest_terminal = None
                             nearest_distance = None
                             for terminal in terminals:
@@ -472,7 +479,7 @@ class Simulator:
                                     trike.status in [TricycleStatus.IDLE, TricycleStatus.RETURNING]
                                 )
                                 if is_at_terminal:
-                                    print("------Tricycle parked in terminal", trike.id, terminal.location.toTuple(), flush=True)
+                                    # print("------Tricycle parked in terminal", trike.id, terminal.location.toTuple(), flush=True)
                                     terminal.addTricycle(trike)
                                     trike.status = TricycleStatus.TERMINAL
                                     nearest_terminal = None
@@ -483,20 +490,20 @@ class Simulator:
                                     nearest_terminal = terminal
                                     nearest_distance = get_euclidean_distance(trike.curPoint().toTuple(), terminal.location.toTuple())
                             if nearest_terminal is not None:
-                                print("------Found nearest terminal", nearest_terminal.location.toTuple(), flush=True)
+                                # print("------Found nearest terminal", nearest_terminal.location.toTuple(), flush=True)
                                 try:
                                     if not trike.updatePath(nearest_terminal.location, priority='front'):
-                                        print("------No Route found. Finishing trip", flush=True)
+                                        # print("------No Route found. Finishing trip", flush=True)
                                         trike.finishTrip(cur_time[0])
                                 except util.NoRoute:
-                                    print("------No Route found. Finishing trip", flush=True)
+                                    # print("------No Route found. Finishing trip", flush=True)
                                     trike.finishTrip(cur_time[0])
                             elif nearest_distance is None:
-                                print("------Not able to find any terminal. Finishing trip", flush=True)
+                                # print("------Not able to find any terminal. Finishing trip", flush=True)
                                 trike.finishTrip(cur_time[0])
                                 
                         else:
-                            print("----Trike didn't move. Attempting to load next cycle point")
+                            # print("----Trike didn't move. Attempting to load next cycle point")
                             # Call onCycleComplete before loading next point
                             trike.onCycleComplete(cur_time[0])
                             trike.loadNextCyclePoint()
@@ -517,7 +524,7 @@ class Simulator:
             # update the time
             cur_time[0] += 1 if self.isRealistic else entities.MS_PER_FRAME
 
-        print("Running the simulation...", flush=True)
+        # print("Running the simulation...", flush=True)
 
         while cur_time[0] < maxTime:
             process_frame()

@@ -6,7 +6,8 @@ from enum import Enum
 MS_PER_FRAME = 1000
 
 # PICKUP / DROPOFF PARAMETERS
-DETECTION_RADIUS_METERS = 200  # Increased radius for detection
+ENQUEUE_RADIUS_METERS = 200  # Radius within which tricycles can detect and enqueue passengers
+S_ENQUEUE_RADIUS_METERS = 20  # Smaller radius for enqueueing when tricycle is serving passengers
 DROPOFF_RADIUS_METERS = 20  # Increased radius for actual dropoff
 PICKUP_RADIUS_METERS = 20  # Increased radius for actual pickup
 
@@ -431,7 +432,7 @@ class Tricycle(Actor):
         """
         
         if self.status == TricycleStatus.TERMINAL:
-            print(f"Tricycle {self.id} cannot move while in TERMINAL status", flush=True)
+            # print(f"Tricycle {self.id} cannot move while in TERMINAL status", flush=True)
             return 0
 
         if not self.map:
@@ -441,11 +442,11 @@ class Tricycle(Actor):
         
         # move to next position
         if not self.to_go:
-            print(f"Tricycle {self.id} has no points in to_go queue", flush=True)
+            # print(f"Tricycle {self.id} has no points in to_go queue", flush=True)
             return 0
         
         nxt = self.to_go[0]
-        print(f"Tricycle {self.id} attempting to move from {cur.toTuple()} to {nxt.toTuple()}", flush=True)
+        # print(f"Tricycle {self.id} attempting to move from {cur.toTuple()} to {nxt.toTuple()}", flush=True)
 
         if self.useMeters:
             distRequiredM = util.haversine(*cur.toTuple(), *nxt.toTuple())
@@ -459,7 +460,7 @@ class Tricycle(Actor):
             distTravelledM = 0 if distRequired == 0 else distRequiredM * (distTravelled/distRequired)
 
         if distRequired == 0:
-            print(f"Tricycle {self.id} reached point {nxt.toTuple()}, removing from to_go", flush=True)
+            # print(f"Tricycle {self.id} reached point {nxt.toTuple()}, removing from to_go", flush=True)
             del self.to_go[0]
             return 0
 
@@ -485,7 +486,7 @@ class Tricycle(Actor):
             })
 
         if progress >= 1:
-            print(f"Tricycle {self.id} completed move to {nxt.toTuple()}, removing from to_go", flush=True)
+            # print(f"Tricycle {self.id} completed move to {nxt.toTuple()}, removing from to_go", flush=True)
             del self.to_go[0]
 
         return 1 if self.useMeters else MS_PER_FRAME
@@ -515,15 +516,15 @@ class Tricycle(Actor):
         # Only block path updates if we're enqueuing AND this isn't for the enqueued passenger
         if self.status == TricycleStatus.ENQUEUING:
             if not self.enqueuedPassenger or not self.map.isAtLocation(new_destination, self.enqueuedPassenger.src):
-                print(f"Tricycle {self.id} cannot update path while enqueuing", flush=True)
+                # print(f"Tricycle {self.id} cannot update path while enqueuing", flush=True)
                 return False
         
         try:
-            print(f"Tricycle {self.id} finding path from {self.path[-1].toTuple()} to {new_destination.toTuple()} with priority {priority}", flush=True)
+            # print(f"Tricycle {self.id} finding path from {self.path[-1].toTuple()} to {new_destination.toTuple()} with priority {priority}", flush=True)
             
             # If we're already at the destination, no need to find a path
             if self.map.isAtLocation(self.path[-1], new_destination):
-                print(f"Tricycle {self.id} already at destination {new_destination.toTuple()}", flush=True)
+                # print(f"Tricycle {self.id} already at destination {new_destination.toTuple()}", flush=True)
                 return True
                 
             # Find path to destination
@@ -534,18 +535,18 @@ class Tricycle(Actor):
             
             # Validate path
             if not path:
-                print(f"No path found from {self.path[-1].toTuple()} to {new_destination.toTuple()}", flush=True)
+                # print(f"No path found from {self.path[-1].toTuple()} to {new_destination.toTuple()}", flush=True)
                 return False
                 
             if len(path) < 2:
-                print(f"Path too short from {self.path[-1].toTuple()} to {new_destination.toTuple()}, got {len(path)} points", flush=True)
+                # print(f"Path too short from {self.path[-1].toTuple()} to {new_destination.toTuple()}, got {len(path)} points", flush=True)
                 return False
             
-            print(f"Tricycle {self.id} found path with {len(path)} points", flush=True)
+            # print(f"Tricycle {self.id} found path with {len(path)} points", flush=True)
             
             # Check for duplicate destinations
             if self.to_go and self.to_go[-1].toTuple() == new_destination.toTuple():
-                print(f"Already en route to {new_destination.toTuple()}", flush=True)
+                # print(f"Already en route to {new_destination.toTuple()}", flush=True)
                 return True
             
             # Convert to Points
@@ -553,20 +554,20 @@ class Tricycle(Actor):
             
             if priority == 'replace':
                 # When replacing path, clear current path and add new one
-                print(f"Tricycle {self.id} replacing path with {len(new_points)} points", flush=True)
+                # print(f"Tricycle {self.id} replacing path with {len(new_points)} points", flush=True)
                 self.to_go = new_points
             elif priority == 'front':
                 # When adding to front, we need to ensure the paths connect
                 if self.to_go:
                     # First find path from current position to new destination
-                    print(f"Tricycle {self.id} finding path from current position {self.path[-1].toTuple()} to {new_destination.toTuple()}", flush=True)
+                    # print(f"Tricycle {self.id} finding path from current position {self.path[-1].toTuple()} to {new_destination.toTuple()}", flush=True)
                     path_to_dest = util.find_path_between_points_in_osrm(
                         self.path[-1].toTuple(),
                         new_destination.toTuple()
                     )
                     if len(path_to_dest) >= 2:
                         # Then find path from new destination to first point in current path
-                        print(f"Tricycle {self.id} finding connecting path from {new_destination.toTuple()} to {self.to_go[0].toTuple()}", flush=True)
+                        # print(f"Tricycle {self.id} finding connecting path from {new_destination.toTuple()} to {self.to_go[0].toTuple()}", flush=True)
                         connecting_path = util.find_path_between_points_in_osrm(
                             new_destination.toTuple(),
                             self.to_go[0].toTuple()
@@ -581,22 +582,22 @@ class Tricycle(Actor):
                                 path_to_dest_points = path_to_dest_points[1:]
                             
                             self.to_go = path_to_dest_points + connecting_points + self.to_go[1:]
-                            print(f"Tricycle {self.id} added {len(path_to_dest_points)} points to front with {len(connecting_points)} connecting points", flush=True)
+                            # print(f"Tricycle {self.id} added {len(path_to_dest_points)} points to front with {len(connecting_points)} connecting points", flush=True)
                         else:
-                            print(f"Could not find connecting path from {new_destination.toTuple()} to {self.to_go[0].toTuple()}", flush=True)
+                            # print(f"Could not find connecting path from {new_destination.toTuple()} to {self.to_go[0].toTuple()}", flush=True)
                             return False
                     else:
-                        print(f"Could not find path from current position to {new_destination.toTuple()}", flush=True)
+                        # print(f"Could not find path from current position to {new_destination.toTuple()}", flush=True)
                         return False
                 else:
                     # If no current path, just add new path
-                    print(f"Tricycle {self.id} adding {len(new_points)} points to empty path", flush=True)
+                    # print(f"Tricycle {self.id} adding {len(new_points)} points to empty path", flush=True)
                     self.to_go = new_points
             else:  # append
                 # When appending, we need to ensure the paths connect
                 if self.to_go:
                     # Find path from last point in current path to new destination
-                    print(f"Tricycle {self.id} finding connecting path from {self.to_go[-1].toTuple()} to {new_destination.toTuple()}", flush=True)
+                    # print(f"Tricycle {self.id} finding connecting path from {self.to_go[-1].toTuple()} to {new_destination.toTuple()}", flush=True)
                     connecting_path = util.find_path_between_points_in_osrm(
                         self.to_go[-1].toTuple(),
                         new_destination.toTuple()
@@ -605,19 +606,19 @@ class Tricycle(Actor):
                         # Add connecting path to new destination
                         connecting_points = [Point(*p) for p in connecting_path]
                         self.to_go = self.to_go[:-1] + connecting_points
-                        print(f"Tricycle {self.id} added {len(connecting_points)} connecting points to path", flush=True)
+                        # print(f"Tricycle {self.id} added {len(connecting_points)} connecting points to path", flush=True)
                     else:
-                        print(f"Could not find connecting path from {self.to_go[-1].toTuple()} to {new_destination.toTuple()}", flush=True)
+                        # print(f"Could not find connecting path from {self.to_go[-1].toTuple()} to {new_destination.toTuple()}", flush=True)
                         return False
                 else:
                     # If no current path, just add new path
-                    print(f"Tricycle {self.id} adding {len(new_points)} points to empty path", flush=True)
+                    # print(f"Tricycle {self.id} adding {len(new_points)} points to empty path", flush=True)
                     self.to_go = new_points
             
             return True
             
         except util.NoRoute:
-            print(f"No route found from {self.path[-1].toTuple()} to {new_destination.toTuple()}", flush=True)
+            # print(f"No route found from {self.path[-1].toTuple()} to {new_destination.toTuple()}", flush=True)
             return False
 
     def loadNextCyclePoint(self):
@@ -636,7 +637,8 @@ class Tricycle(Actor):
         nxtPoint = self.roamPath.getNextPoint(curPoint)
         
         if not self.updatePath(nxtPoint, priority='append'):
-            print(f"Failed to add next cycle point", flush=True)
+            # print(f"Failed to add next cycle point", flush=True)
+            pass
 
     def newRoamPath(self, current_time: int):
         """
@@ -664,7 +666,7 @@ class Tricycle(Actor):
                 })
                 return [new_path.getStartPoint(), new_path.path[-1]]
             else:
-                print(f"Failed to update path for new roam path", flush=True)
+                # print(f"Failed to update path for new roam path", flush=True)
                 return None
 
     ########## Passenger Management Methods ##########
@@ -693,18 +695,19 @@ class Tricycle(Actor):
         
         # If we already have an enqueued passenger, don't try to enqueue another one
         if self.enqueuedPassenger is not None:
-            print(f"Tricycle {self.id} already has enqueued passenger {self.enqueuedPassenger}", flush=True)
+            # print(f"Tricycle {self.id} already has enqueued passenger {self.enqueuedPassenger}", flush=True)
             return None
         
         cur = self.path[-1]
         
-        # Calculate how many more passengers we can take (considering both loaded and enqueued)
-        remaining_capacity = self.capacity - (len(self.passengers) + 1)
+        # Check capacity
+        remaining_capacity = self.capacity - len(self.passengers)
         if remaining_capacity <= 0:
             return None
         
         # Get nearby passengers using the new Map method
-        nearby_passengers = self.map.getNearbyPassengers(cur, DETECTION_RADIUS_METERS)
+        radius = S_ENQUEUE_RADIUS_METERS if self.hasPassenger() else ENQUEUE_RADIUS_METERS
+        nearby_passengers = self.map.getNearbyPassengers(cur, radius)
         
         # Sort passengers by distance
         passenger_distances = []
@@ -736,7 +739,7 @@ class Tricycle(Actor):
             # Add pickup point to the front of to_go if not already there
             if not any(point.x == p.src.x and point.y == p.src.y for point in self.to_go):
                 if not self.updatePath(p.src, priority='front'):
-                    print(f"Failed to add pickup point for {p.id}", flush=True)
+                    # print(f"Failed to add pickup point for {p.id}", flush=True)
                     # If we failed to add the pickup point, reset the passenger
                     p.onReset(current_time, [p.src.x, p.src.y])
                     self.enqueuedPassenger = None
@@ -746,7 +749,7 @@ class Tricycle(Actor):
                     else:
                         self.updateStatus(TricycleStatus.IDLE)
                 else:
-                    print(f"Enqueued passenger {p.id} at distance {distance:.2f}m", flush=True)
+                    # print(f"Enqueued passenger {p.id} at distance {distance:.2f}m", flush=True)
                     return p
         
         return None
@@ -818,32 +821,32 @@ class Tricycle(Actor):
         cur = self.path[-1]
         
         # Get nearby passengers using the new Map method
-        nearby_passengers = self.map.getNearbyPassengers(cur, DETECTION_RADIUS_METERS)
+        nearby_passengers = self.map.getNearbyPassengers(cur, PICKUP_RADIUS_METERS)
         
         loaded = []
         for p in nearby_passengers:
             # Only consider ENQUEUED passengers claimed by this tricycle
             if p.status != PassengerStatus.ENQUEUED:
-                print(f"Passenger {p.id} not in ENQUEUED status (current: {p.status})", flush=True)
+                # print(f"Passenger {p.id} not in ENQUEUED status (current: {p.status})", flush=True)
                 continue
             if p.claimed_by != self.id:
-                print(f"Passenger {p.id} claimed by {p.claimed_by}, not {self.id}", flush=True)
+                # print(f"Passenger {p.id} claimed by {p.claimed_by}, not {self.id}", flush=True)
                 continue
                 
             # Check if we're exactly at the passenger's spawn location
             if self.map.isAtLocation(cur, p.src):
                 if len(self.passengers) >= self.capacity:
-                    print(f"Tricycle {self.id} at capacity ({len(self.passengers)}/{self.capacity})", flush=True)
+                    # print(f"Tricycle {self.id} at capacity ({len(self.passengers)}/{self.capacity})", flush=True)
                     # If we can't load the passenger (e.g., capacity reached),
                     # reset their status back to WAITING and clear claim
-                    print(f"Could not load {p.id} into {self.id}, resetting status to WAITING", flush=True)
+                    # print(f"Could not load {p.id} into {self.id}, resetting status to WAITING", flush=True)
                     p.onReset(current_time, [p.src.x, p.src.y])
                     continue
 
                 if self.loadPassenger(p, current_time):
                     loaded.append(p)
                     self.map.removePassenger(p)
-                    print(f"Loaded {p.id} into {self.id} at exact spawn location", flush=True)
+                    # print(f"Loaded {p.id} into {self.id} at exact spawn location", flush=True)
                     
                     # Add a small wait after loading to ensure stability
                     self.events.append({
@@ -856,17 +859,20 @@ class Tricycle(Actor):
                     # After loading a passenger, schedule their destination
                     try:
                         if self.scheduleNextPassenger():
-                            print(f"Scheduled destination for {p.id}", flush=True)
+                            # print(f"Scheduled destination for {p.id}", flush=True)
+                            pass
                     except NoMorePassengers:
-                        print(f"No more passengers to schedule for {self.id}", flush=True)
+                        # print(f"No more passengers to schedule for {self.id}", flush=True)
+                        pass
                     self.updateStatus(TricycleStatus.SERVING)
                 else:
                     # If we can't load the passenger (e.g., capacity reached),
                     # reset their status back to WAITING and clear claim
-                    print(f"Could not load {p.id} into {self.id}, resetting status to WAITING", flush=True)
+                    # print(f"Could not load {p.id} into {self.id}, resetting status to WAITING", flush=True)
                     p.onReset(current_time, [p.src.x, p.src.y])
             else:
-                print(f"Tricycle {self.id} is not at {p.id}'s exact spawn location", flush=True)
+                # print(f"Tricycle {self.id} is not at {p.id}'s exact spawn location", flush=True)
+                pass
         
         return loaded
 
@@ -896,7 +902,7 @@ class Tricycle(Actor):
         for index, p in enumerate(self.passengers[:]):
             # Calculate distance using haversine (in meters)
             distance = util.haversine(*cur.toTuple(), *p.dest.toTuple())
-            print(f"Tricycle {self.id} is {distance:.2f}m away from {p.id}'s destination at {p.dest.toTuple()}", flush=True)
+            # print(f"Tricycle {self.id} is {distance:.2f}m away from {p.id}'s destination at {p.dest.toTuple()}", flush=True)
             if distance <= DROPOFF_RADIUS_METERS:
                 dropped_any = True
                 self.events.append({
@@ -908,9 +914,10 @@ class Tricycle(Actor):
                 self.passengers = list(filter(lambda x : x.id != p.id, self.passengers))
                 p.onDropoff(current_time, [cur.x, cur.y])
                 dropped.append(p)
-                print(f"Dropped {p.id} at distance {distance:.2f}m", flush=True)
+                # print(f"Dropped {p.id} at distance {distance:.2f}m", flush=True)
             else:
-                print(f"Tricycle {self.id} is too far ({distance:.2f}m) from {p.id}'s destination to drop off", flush=True)
+                # print(f"Tricycle {self.id} is too far ({distance:.2f}m) from {p.id}'s destination to drop off", flush=True)
+                pass
         
         # If all passengers are dropped off, update status
         if not self.passengers:
@@ -933,9 +940,11 @@ class Tricycle(Actor):
             if self.passengers:
                 try:
                     if self.scheduleNextPassenger():
-                        print(f"Scheduled next passenger after dropoff for {self.id}", flush=True)
+                        # print(f"Scheduled next passenger after dropoff for {self.id}", flush=True)
+                        pass
                 except NoMorePassengers:
-                    print(f"No more passengers to schedule for {self.id}", flush=True)
+                    # print(f"No more passengers to schedule for {self.id}", flush=True)
+                    pass
         
         return dropped
 
@@ -962,18 +971,18 @@ class Tricycle(Actor):
         # Get the path to the passenger's destination
         src_point = self.path[-1]
         dst_point = p.dest
-        print(f"Tricycle {self.id} attempting to schedule path to {p.id}'s destination at {dst_point.toTuple()}", flush=True)
+        # print(f"Tricycle {self.id} attempting to schedule path to {p.id}'s destination at {dst_point.toTuple()}", flush=True)
         try:
             # Use 'front' priority instead of 'replace' to maintain path continuity
             if not self.updatePath(p.dest, priority='front'):
-                print(f"Failed to update path for {p.id} to {dst_point.toTuple()}", flush=True)
+                # print(f"Failed to update path for {p.id} to {dst_point.toTuple()}", flush=True)
                 return None
-            print(f"Successfully scheduled path for {p.id} to {dst_point.toTuple()}", flush=True)
+            # print(f"Successfully scheduled path for {p.id} to {dst_point.toTuple()}", flush=True)
             self.updateStatus(TricycleStatus.SERVING)
             return p
         
         except util.NoRoute:
-            print(f"No Route found for {p.id} going to {dst_point.toTuple()}, skipping", flush=True)
+            # print(f"No Route found for {p.id} going to {dst_point.toTuple()}, skipping", flush=True)
             return None
 
     ########## State Management Methods ##########
@@ -1098,12 +1107,13 @@ class Terminal:
     def addTricycle(self, tricycle: Tricycle):
         """Add a tricycle to the terminal if it's in a valid state."""
         if tricycle.status not in [TricycleStatus.IDLE, TricycleStatus.RETURNING]:
-            print(f"Cannot add tricycle {tricycle.id} to terminal: invalid status {tricycle.status}", flush=True)
+            # print(f"Cannot add tricycle {tricycle.id} to terminal: invalid status {tricycle.status}", flush=True)
             return
         self.queue.append(tricycle)
         tricycle.active = False
         if not tricycle.updateStatus(TricycleStatus.TERMINAL):
-            print(f"Warning: Failed to set tricycle {tricycle.id} to TERMINAL status", flush=True)
+            # print(f"Warning: Failed to set tricycle {tricycle.id} to TERMINAL status", flush=True)
+            pass
     
     def addPassenger(
             self,

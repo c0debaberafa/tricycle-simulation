@@ -17,8 +17,8 @@ if __name__ == '__main__':
         totalTrikes=NUM_TRIKES,
         totalTerminals=NUM_TERMINALS,
         totalPassengers=NUM_PASSENGERS,
-        roadPassengerChance=0.0,
-        roamingTrikeChance=0.0,
+        roadPassengerChance=1.0,
+        roamingTrikeChance=1.0,
         useFixedHotspots=True, # only use if you have setup hotspots in config
         useFixedTerminals=False, # only use if you have setup hotspots in config
         useSmartScheduler=True,
