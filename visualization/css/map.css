@@ -12,6 +12,30 @@
     border-top: 2px solid #444;
     z-index: 1000;
     box-shadow: 0 -2px 10px rgba(0,0,0,0.3);
+    min-height: 100px;
+    max-height: 80vh;
+}
+
+.resize-handle {
+    position: absolute;
+    top: -5px;
+    left: 0;
+    right: 0;
+    height: 10px;
+    cursor: ns-resize;
+    z-index: 1001;
+}
+
+.resize-handle::after {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    width: 40px;
+    height: 4px;
+    background: #444;
+    border-radius: 2px;
 }
 
 .tab-header {

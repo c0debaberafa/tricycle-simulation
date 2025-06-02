@@ -62,7 +62,9 @@ defaultTrikeConfig = {
     "capacity": 3,
     "speed": 5.556,  # Default to meters per second (20 km/h)
     "scheduler": smart_scheduler,
-    "useMeters": True  # Always use meters for consistency
+    "useMeters": True,  # Always use meters for consistency
+    "maxCycles": 3,  # Maximum cycles before generating new roam path
+    "s_enqueue_radius_meters": 50  # Smaller radius for enqueueing when serving passengers
 }
 
 cache = None
@@ -197,7 +199,9 @@ class Simulator:
             "isRealistic": self.isRealistic,
             "trikeConfig": {
                 "capacity": self.trikeConfig["capacity"],
-                "speed": self.trikeConfig["speed"]
+                "speed": self.trikeConfig["speed"],
+                "maxCycles": self.trikeConfig["maxCycles"],
+                "s_enqueue_radius_meters": self.trikeConfig["s_enqueue_radius_meters"]
             }
         }
 
@@ -267,8 +271,12 @@ class Simulator:
                     createTime=0,
                     deathTime=-1,
                     map=map,
-                    maxCycles=5,
-                    **self.trikeConfig
+                    capacity=self.trikeConfig["capacity"],
+                    speed=self.trikeConfig["speed"],
+                    scheduler=self.trikeConfig["scheduler"],
+                    useMeters=self.trikeConfig["useMeters"],
+                    maxCycles=self.trikeConfig["maxCycles"],
+                    s_enqueue_radius_meters=self.trikeConfig["s_enqueue_radius_meters"]
                 )
                 
                 # Generate initial roam path
@@ -306,7 +314,12 @@ class Simulator:
                     createTime=0,
                     deathTime=-1,
                     map=map,
-                    **self.trikeConfig
+                    capacity=self.trikeConfig["capacity"],
+                    speed=self.trikeConfig["speed"],
+                    scheduler=self.trikeConfig["scheduler"],
+                    useMeters=self.trikeConfig["useMeters"],
+                    maxCycles=self.trikeConfig["maxCycles"],
+                    s_enqueue_radius_meters=self.trikeConfig["s_enqueue_radius_meters"]
                 )
 
                 if in_terminal:

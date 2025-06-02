@@ -7,7 +7,7 @@ MS_PER_FRAME = 1000
 
 # PICKUP / DROPOFF PARAMETERS
 ENQUEUE_RADIUS_METERS = 200  # Radius within which tricycles can detect and enqueue passengers
-S_ENQUEUE_RADIUS_METERS = 20  # Smaller radius for enqueueing when tricycle is serving passengers
+S_ENQUEUE_RADIUS_METERS = 50  # Smaller radius for enqueueing when tricycle is serving passengers
 DROPOFF_RADIUS_METERS = 20  # Increased radius for actual dropoff
 PICKUP_RADIUS_METERS = 20  # Increased radius for actual pickup
 
@@ -361,7 +361,9 @@ class Tricycle(Actor):
             scheduler = None,
             map: Map | None = None,
             useMeters: bool = False,
-            maxCycles: int = 5
+            maxCycles: int = None,
+            s_enqueue_radius_meters: float = None,  # Smaller radius for enqueueing when tricycle is serving passengers
+            **trikeConfig
     ):
         super().__init__(createTime, deathTime)
         self.id = id
@@ -378,7 +380,8 @@ class Tricycle(Actor):
         self.roamPath = roamPath
         self.scheduler = scheduler
         self.cycleCount = 0 # To count how many cycles a tricycle has roamed with no pickups
-        self.maxCycles = maxCycles # To count how many cycles a tricycle can roam with no pickups before it is considered dead
+        self.maxCycles = maxCycles if maxCycles is not None else trikeConfig.get("maxCycles", 3) # To count how many cycles a tricycle can roam with no pickups before it is considered dead
+        self.s_enqueue_radius_meters = s_enqueue_radius_meters if s_enqueue_radius_meters is not None else trikeConfig.get("s_enqueue_radius_meters", 50)  # Smaller radius for enqueueing when serving passengers
 
         # initialize the tricycle
         self.isRoaming = isRoaming
@@ -706,7 +709,7 @@ class Tricycle(Actor):
             return None
         
         # Get nearby passengers using the new Map method
-        radius = S_ENQUEUE_RADIUS_METERS if self.hasPassenger() else ENQUEUE_RADIUS_METERS
+        radius = self.s_enqueue_radius_meters if self.hasPassenger() else ENQUEUE_RADIUS_METERS
         nearby_passengers = self.map.getNearbyPassengers(cur, radius)
         
         # Sort passengers by distance
@@ -890,6 +893,7 @@ class Tricycle(Actor):
             - Uses haversine distance for realistic dropoff
             - Updates tricycle status after all passengers are dropped
             - Adds wait time after dropoff
+            - Prioritizes enqueued passengers over scheduling next passenger
         """
         if not self.map:
             raise Exception("Not backward compatible. Please use a map")
@@ -936,8 +940,19 @@ class Tricycle(Actor):
                 "location": [self.path[-1].x, self.path[-1].y]
             })
             
-            # Schedule next passenger if we still have passengers
-            if self.passengers:
+            # If we have an enqueued passenger, prioritize picking them up
+            if self.enqueuedPassenger:
+                if not self.updatePath(self.enqueuedPassenger.src, priority='front'):
+                    # If we failed to add the pickup point, reset the passenger
+                    self.enqueuedPassenger.onReset(current_time, [self.enqueuedPassenger.src.x, self.enqueuedPassenger.src.y])
+                    self.enqueuedPassenger = None
+                    # Reset status based on roaming state
+                    if self.isRoaming:
+                        self.updateStatus(TricycleStatus.ROAMING)
+                    else:
+                        self.updateStatus(TricycleStatus.IDLE)
+            # Otherwise, if we still have passengers, schedule the next one
+            elif self.passengers:
                 try:
                     if self.scheduleNextPassenger():
                         # print(f"Scheduled next passenger after dropoff for {self.id}", flush=True)

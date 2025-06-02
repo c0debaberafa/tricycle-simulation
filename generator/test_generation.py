@@ -26,7 +26,7 @@ def load_progress(data_dir):
             return json.load(f)
     return None
 
-def run_simulation(num_trikes, use_smart_scheduler=True, trike_capacity=3, seed=None, max_retries=10, max_wait_time=300):
+def run_simulation(num_trikes, use_smart_scheduler=True, trike_capacity=3, seed=None, max_retries=10, max_wait_time=300, s_enqueue_radius_meters=50, maxCycles=3):
     """
     Run a single simulation with the given parameters.
     
@@ -37,6 +37,8 @@ def run_simulation(num_trikes, use_smart_scheduler=True, trike_capacity=3, seed=
         seed (str): Seed string for reproducibility
         max_retries (int): Maximum number of retries for failed simulations
         max_wait_time (int): Maximum wait time between retries in seconds
+        s_enqueue_radius_meters (float): Radius for enqueueing when tricycle is serving passengers
+        maxCycles (int): Maximum number of cycles before generating new path
     Returns:
         dict: Simulation results or None if all retries failed
     """
@@ -51,7 +53,9 @@ def run_simulation(num_trikes, use_smart_scheduler=True, trike_capacity=3, seed=
         'useFixedHotspots': True,
         'useFixedTerminals': False,
         'roadPassengerChance': 1.0,
-        'roamingTrikeChance': 1.0
+        'roamingTrikeChance': 1.0,
+        's_enqueue_radius_meters': s_enqueue_radius_meters,
+        'maxCycles': maxCycles
     }
     
     attempt = 0
@@ -64,7 +68,7 @@ def run_simulation(num_trikes, use_smart_scheduler=True, trike_capacity=3, seed=
             simulator = Simulator(**params)
             
             # Run simulation
-            print(f"\nRunning simulation with {num_trikes} tricycles (capacity: {trike_capacity}, seed: {seed}, attempt: {attempt + 1}/{max_retries})")
+            print(f"\nRunning simulation with {num_trikes} tricycles (capacity: {trike_capacity}, s_radius: {s_enqueue_radius_meters}, maxCycles: {maxCycles}, seed: {seed}, attempt: {attempt + 1}/{max_retries})")
             start_time = time.time()
             
             results = simulator.run(seed=seed, maxTime=10000, fixedHotspots=config.MAGIN_HOTSPOTS, fixedTerminals=config.MAGIN_TERMINALS)
@@ -119,7 +123,12 @@ def main():
     # Test parameters
     tricycle_counts = [3, 6, 9, 12, 15]
     tricycle_capacities = [3, 4, 5, 6]
-    num_runs = 5  # Number of runs per parameter combination
+    s_enqueue_radii = [25, 50, 75, 100]  # Different serving enqueue radii to test
+    max_cycles = [1, 2, 3, 4]  # Different max cycles to test
+    num_runs = 25  # Number of runs per parameter combination
+    
+    # Fixed parameters for enqueue radius and max cycles tests
+    FIXED_TRIKES = 9  # Fixed number of tricycles for parameter analysis
     
     # Try to load existing progress
     all_results = load_progress(data_dir)
@@ -134,43 +143,79 @@ def main():
         (sim['metadata']['num_trikes'], 
          sim['metadata']['use_smart_scheduler'], 
          sim['metadata']['trike_capacity'], 
-         sim['metadata']['seed'])
+         sim['metadata']['seed'],
+         sim['metadata'].get('s_enqueue_radius_meters', 50),  # Default to 50 if not present
+         sim['metadata'].get('maxCycles', 3))  # Default to 3 if not present
         for sim in all_results['simulations']
     }
     
-    # 1. Run smart scheduling tests with capacity 3 (for graphs 1-3)
-    print("\n=== Running Smart Scheduling Tests (capacity 3) ===")
-    for num_trikes in tricycle_counts:
-        for run in range(num_runs):
-            seed = f"graphdata{run}"
-            if (num_trikes, True, 3, seed) not in completed_sims:
-                results = run_simulation(num_trikes, use_smart_scheduler=True, trike_capacity=3, seed=seed)
-                if results:
-                    all_results['simulations'].append(results)
-                    save_progress(all_results, data_dir)
+    # # 1. Run smart scheduling tests with capacity 3 (for graphs 1-3)
+    # print("\n=== Running Smart Scheduling Tests (capacity 3) ===")
+    # for num_trikes in tricycle_counts:
+    #     for run in range(num_runs):
+    #         seed = f"graphdata{run}"
+    #         if (num_trikes, True, 3, seed, 50, 5) not in completed_sims:
+    #             results = run_simulation(num_trikes, use_smart_scheduler=True, trike_capacity=3, seed=seed)
+    #             if results:
+    #                 all_results['simulations'].append(results)
+    #                 save_progress(all_results, data_dir)
     
-    # 2. Run FIFO scheduling tests with capacity 3 (for graph 4)
-    print("\n=== Running FIFO Scheduling Tests (capacity 3) ===")
-    for num_trikes in tricycle_counts:
+    # # 2. Run FIFO scheduling tests with capacity 3 (for graph 4)
+    # print("\n=== Running FIFO Scheduling Tests (capacity 3) ===")
+    # for num_trikes in tricycle_counts:
+    #     for run in range(num_runs):
+    #         seed = f"graphdata{run}"
+    #         if (num_trikes, False, 3, seed, 50, 5) not in completed_sims:
+    #             results = run_simulation(num_trikes, use_smart_scheduler=False, trike_capacity=3, seed=seed)
+    #             if results:
+    #                 all_results['simulations'].append(results)
+    #                 save_progress(all_results, data_dir)
+
+    # # 3. Run capacity analysis tests (for graphs 5-7)
+    # print("\n=== Running Capacity Analysis Tests ===")
+    # for capacity in tricycle_capacities:
+    #     for num_trikes in tricycle_counts:
+    #         for run in range(num_runs):
+    #             seed = f"graphdata{run}"
+    #             if (num_trikes, True, capacity, seed, 50, 5) not in completed_sims:
+    #                 results = run_simulation(num_trikes, use_smart_scheduler=True, trike_capacity=capacity, seed=seed)
+    #                 if results:
+    #                     all_results['simulations'].append(results)
+    #                     save_progress(all_results, data_dir)
+
+    # 4. Run serving enqueue radius analysis tests
+    print("\n=== Running Serving Enqueue Radius Analysis Tests ===")
+    for radius in s_enqueue_radii:
         for run in range(num_runs):
             seed = f"graphdata{run}"
-            if (num_trikes, False, 3, seed) not in completed_sims:
-                results = run_simulation(num_trikes, use_smart_scheduler=False, trike_capacity=3, seed=seed)
+            if (FIXED_TRIKES, True, 3, seed, radius, 3) not in completed_sims:
+                results = run_simulation(
+                    FIXED_TRIKES, 
+                    use_smart_scheduler=True, 
+                    trike_capacity=3, 
+                    seed=seed,
+                    s_enqueue_radius_meters=radius
+                )
                 if results:
                     all_results['simulations'].append(results)
                     save_progress(all_results, data_dir)
 
-    # 3. Run capacity analysis tests (for graphs 5-7)
-    print("\n=== Running Capacity Analysis Tests ===")
-    for capacity in tricycle_capacities:
-        for num_trikes in tricycle_counts:
-            for run in range(num_runs):
-                seed = f"graphdata{run}"
-                if (num_trikes, True, capacity, seed) not in completed_sims:
-                    results = run_simulation(num_trikes, use_smart_scheduler=True, trike_capacity=capacity, seed=seed)
-                    if results:
-                        all_results['simulations'].append(results)
-                        save_progress(all_results, data_dir)
+    # 5. Run max cycles analysis tests
+    print("\n=== Running Max Cycles Analysis Tests ===")
+    for cycles in max_cycles:
+        for run in range(num_runs):
+            seed = f"graphdata{run}"
+            if (FIXED_TRIKES, True, 3, seed, 50, cycles) not in completed_sims:
+                results = run_simulation(
+                    FIXED_TRIKES, 
+                    use_smart_scheduler=True, 
+                    trike_capacity=3, 
+                    seed=seed,
+                    maxCycles=cycles
+                )
+                if results:
+                    all_results['simulations'].append(results)
+                    save_progress(all_results, data_dir)
 
     # Save final results
     final_file = os.path.join(data_dir, f'simulation_results_{datetime.now().strftime("%Y%m%d_%H%M%S")}.json')
