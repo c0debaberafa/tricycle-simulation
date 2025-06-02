@@ -6,9 +6,9 @@ if __name__ == '__main__':
     # these are the basic parameters if you want to
     # simulate simple non-roaming cases. For more complex
     # cases, you would need to consult the code in more details
-    NUM_TRIKES = 3
+    NUM_TRIKES = 20
     NUM_TERMINALS = 2
-    NUM_PASSENGERS = 20
+    NUM_PASSENGERS = 100
     MAX_TIME = 5_000 
     TEST_COUNT = 1
     
