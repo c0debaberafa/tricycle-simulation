@@ -12,6 +12,9 @@ sys.path.insert(0, generator_dir)
 from scenarios.real import Simulator
 import config
 
+# Global configuration
+NUM_RUNS = 50  # Number of runs per parameter combination
+
 def save_progress(all_results, data_dir):
     """Save current progress to a temporary file"""
     temp_file = os.path.join(data_dir, 'simulation_progress.json')
@@ -24,27 +27,6 @@ def load_progress(data_dir):
     if os.path.exists(temp_file):
         with open(temp_file, 'r') as f:
             return json.load(f)
-    return None
-
-def get_config_key(num_trikes, use_smart_scheduler, trike_capacity, s_enqueue_radius_meters, enqueue_radius_meters, maxCycles):
-    """Generate a unique key for a configuration"""
-    return (num_trikes, use_smart_scheduler, trike_capacity, s_enqueue_radius_meters, enqueue_radius_meters, maxCycles)
-
-def find_matching_simulation(all_results, config_key, seed_prefix):
-    """Find a simulation that matches the given configuration and hasn't been used for this group yet"""
-    used_seeds = {sim['metadata']['seed'] for sim in all_results['simulations'] if sim['metadata']['seed'].startswith(seed_prefix)}
-    
-    for sim in all_results['simulations']:
-        sim_key = get_config_key(
-            sim['metadata']['num_trikes'],
-            sim['metadata']['use_smart_scheduler'],
-            sim['metadata']['trike_capacity'],
-            sim['metadata']['s_enqueue_radius_meters'],
-            sim['metadata']['enqueue_radius_meters'],
-            sim['metadata']['maxCycles']
-        )
-        if sim_key == config_key and sim['metadata']['seed'] not in used_seeds:
-            return sim
     return None
 
 def run_simulation(num_trikes, use_smart_scheduler=True, trike_capacity=3, seed=None, max_retries=10, max_wait_time=300, s_enqueue_radius_meters=50, enqueue_radius_meters=200, maxCycles=2):
@@ -149,13 +131,13 @@ def run_simulation(num_trikes, use_smart_scheduler=True, trike_capacity=3, seed=
 
 def print_progress(group_a_completed, group_b_completed, group_c_completed, group_d_completed, 
                   completed_simulations, total_simulations, tricycle_counts, tricycle_capacities, 
-                  enqueue_radii, s_enqueue_radii, num_runs):
+                  enqueue_radii, s_enqueue_radii):
     """Print progress update for all groups"""
     print(f"\nProgress Update:")
-    print(f"Group A: {group_a_completed}/{len(tricycle_counts) * num_runs} simulations completed")
-    print(f"Group B: {group_b_completed}/{len(tricycle_capacities) * num_runs} simulations completed")
-    print(f"Group C: {group_c_completed}/{len(enqueue_radii) * num_runs} simulations completed")
-    print(f"Group D: {group_d_completed}/{len(s_enqueue_radii) * num_runs} simulations completed")
+    print(f"Group A: {group_a_completed}/{len(tricycle_counts) * NUM_RUNS} simulations completed")
+    print(f"Group B: {group_b_completed}/{len(tricycle_capacities) * NUM_RUNS} simulations completed")
+    print(f"Group C: {group_c_completed}/{len(enqueue_radii) * NUM_RUNS} simulations completed")
+    print(f"Group D: {group_d_completed}/{len(s_enqueue_radii) * NUM_RUNS} simulations completed")
     print(f"Overall: {completed_simulations}/{total_simulations} simulations completed ({(completed_simulations/total_simulations)*100:.1f}%)")
     print("########################################################")
 
@@ -177,14 +159,12 @@ def main():
     # Group D: Serving enqueue radius (fixed trikes=9, capacity=3, e_radius=100, maxCycles=2)
     s_enqueue_radii = [25, 50, 75, 100]
     
-    num_runs = 50  # Number of runs per parameter combination
-    
     # Calculate total number of simulations
     total_simulations = (
-        len(tricycle_counts) * num_runs +  # Group A
-        len(tricycle_capacities) * num_runs +  # Group B
-        len(enqueue_radii) * num_runs +  # Group C
-        len(s_enqueue_radii) * num_runs  # Group D
+        len(tricycle_counts) * NUM_RUNS +  # Group A
+        len(tricycle_capacities) * NUM_RUNS +  # Group B
+        len(enqueue_radii) * NUM_RUNS +  # Group C
+        len(s_enqueue_radii) * NUM_RUNS  # Group D
     )
     
     # Try to load existing progress
@@ -195,19 +175,6 @@ def main():
             'simulations': []
         }
     
-    # Track completed configurations (without seeds)
-    completed_configs = {
-        get_config_key(
-            sim['metadata']['num_trikes'],
-            sim['metadata']['use_smart_scheduler'],
-            sim['metadata']['trike_capacity'],
-            sim['metadata']['s_enqueue_radius_meters'],
-            sim['metadata']['enqueue_radius_meters'],
-            sim['metadata']['maxCycles']
-        )
-        for sim in all_results['simulations']
-    }
-
     # Initialize progress counters
     completed_simulations = len(all_results['simulations'])
     group_a_completed = sum(1 for sim in all_results['simulations'] if sim['metadata'].get('seed', '').startswith('groupA_'))
@@ -218,167 +185,99 @@ def main():
     def update_progress():
         print_progress(group_a_completed, group_b_completed, group_c_completed, group_d_completed,
                       completed_simulations, total_simulations, tricycle_counts, tricycle_capacities,
-                      enqueue_radii, s_enqueue_radii, num_runs)
+                      enqueue_radii, s_enqueue_radii)
 
     # Group A: Number of tricycles analysis
     print("\n=== Running Group A: Number of Tricycles Analysis ===")
     for num_trikes in tricycle_counts:
-        for run in range(num_runs):
+        for run in range(NUM_RUNS):
             seed = f"groupA_{num_trikes}_{run}"
-            config_key = get_config_key(num_trikes, True, 3, 50, 100, 2)
-            
-            # Check if we already have this configuration
-            existing_sim = find_matching_simulation(all_results, config_key, 'groupA_')
-            if existing_sim:
-                print(f"\nReusing existing simulation for Group A - Number of Tricycles: {num_trikes}")
-                print(f"Configuration: capacity=3, s_radius=50, e_radius=100, maxCycles=2")
-                # Copy the existing simulation with a new seed
-                new_sim = existing_sim.copy()
-                new_sim['metadata']['seed'] = seed
-                all_results['simulations'].append(new_sim)
+            print(f"\nTesting Group A - Number of Tricycles: {num_trikes}")
+            print(f"Fixed parameters: capacity=3, s_radius=50, e_radius=100, maxCycles=2")
+            results = run_simulation(
+                num_trikes,
+                use_smart_scheduler=True,
+                trike_capacity=3,
+                seed=seed,
+                s_enqueue_radius_meters=50,
+                enqueue_radius_meters=100,
+                maxCycles=2
+            )
+            if results:
+                all_results['simulations'].append(results)
                 save_progress(all_results, data_dir)
                 completed_simulations += 1
                 group_a_completed += 1
                 update_progress()
-            elif config_key not in completed_configs:
-                print(f"\nTesting Group A - Number of Tricycles: {num_trikes}")
-                print(f"Fixed parameters: capacity=3, s_radius=50, e_radius=100, maxCycles=2")
-                results = run_simulation(
-                    num_trikes,
-                    use_smart_scheduler=True,
-                    trike_capacity=3,
-                    seed=seed,
-                    s_enqueue_radius_meters=50,
-                    enqueue_radius_meters=100,
-                    maxCycles=2
-                )
-                if results:
-                    all_results['simulations'].append(results)
-                    completed_configs.add(config_key)
-                    save_progress(all_results, data_dir)
-                    completed_simulations += 1
-                    group_a_completed += 1
-                    update_progress()
 
     # Group B: Tricycle capacity analysis
     print("\n=== Running Group B: Tricycle Capacity Analysis ===")
     for capacity in tricycle_capacities:
-        for run in range(num_runs):
+        for run in range(NUM_RUNS):
             seed = f"groupB_{capacity}_{run}"
-            config_key = get_config_key(9, True, capacity, 50, 100, 2)
-            
-            # Check if we already have this configuration
-            existing_sim = find_matching_simulation(all_results, config_key, 'groupB_')
-            if existing_sim:
-                print(f"\nReusing existing simulation for Group B - Tricycle Capacity: {capacity}")
-                print(f"Configuration: trikes=9, s_radius=50, e_radius=100, maxCycles=2")
-                # Copy the existing simulation with a new seed
-                new_sim = existing_sim.copy()
-                new_sim['metadata']['seed'] = seed
-                all_results['simulations'].append(new_sim)
+            print(f"\nTesting Group B - Tricycle Capacity: {capacity}")
+            print(f"Fixed parameters: trikes=9, s_radius=50, e_radius=100, maxCycles=2")
+            results = run_simulation(
+                9,  # Fixed number of tricycles
+                use_smart_scheduler=True,
+                trike_capacity=capacity,
+                seed=seed,
+                s_enqueue_radius_meters=50,
+                enqueue_radius_meters=100,
+                maxCycles=2
+            )
+            if results:
+                all_results['simulations'].append(results)
                 save_progress(all_results, data_dir)
                 completed_simulations += 1
                 group_b_completed += 1
                 update_progress()
-            elif config_key not in completed_configs:
-                print(f"\nTesting Group B - Tricycle Capacity: {capacity}")
-                print(f"Fixed parameters: trikes=9, s_radius=50, e_radius=100, maxCycles=2")
-                results = run_simulation(
-                    9,  # Fixed number of tricycles
-                    use_smart_scheduler=True,
-                    trike_capacity=capacity,
-                    seed=seed,
-                    s_enqueue_radius_meters=50,
-                    enqueue_radius_meters=100,
-                    maxCycles=2
-                )
-                if results:
-                    all_results['simulations'].append(results)
-                    completed_configs.add(config_key)
-                    save_progress(all_results, data_dir)
-                    completed_simulations += 1
-                    group_b_completed += 1
-                    update_progress()
 
     # Group C: Enqueue radius analysis
     print("\n=== Running Group C: Enqueue Radius Analysis ===")
     for radius in enqueue_radii:
-        for run in range(num_runs):
+        for run in range(NUM_RUNS):
             seed = f"groupC_{radius}_{run}"
-            config_key = get_config_key(9, True, 3, 50, radius, 2)
-            
-            # Check if we already have this configuration
-            existing_sim = find_matching_simulation(all_results, config_key, 'groupC_')
-            if existing_sim:
-                print(f"\nReusing existing simulation for Group C - Enqueue Radius: {radius} meters")
-                print(f"Configuration: trikes=9, capacity=3, s_radius=50, maxCycles=2")
-                # Copy the existing simulation with a new seed
-                new_sim = existing_sim.copy()
-                new_sim['metadata']['seed'] = seed
-                all_results['simulations'].append(new_sim)
+            print(f"\nTesting Group C - Enqueue Radius: {radius} meters")
+            print(f"Fixed parameters: trikes=9, capacity=3, s_radius=50, maxCycles=2")
+            results = run_simulation(
+                9,  # Fixed number of tricycles
+                use_smart_scheduler=True,
+                trike_capacity=3,
+                seed=seed,
+                s_enqueue_radius_meters=50,
+                enqueue_radius_meters=radius,
+                maxCycles=2
+            )
+            if results:
+                all_results['simulations'].append(results)
                 save_progress(all_results, data_dir)
                 completed_simulations += 1
                 group_c_completed += 1
                 update_progress()
-            elif config_key not in completed_configs:
-                print(f"\nTesting Group C - Enqueue Radius: {radius} meters")
-                print(f"Fixed parameters: trikes=9, capacity=3, s_radius=50, maxCycles=2")
-                results = run_simulation(
-                    9,  # Fixed number of tricycles
-                    use_smart_scheduler=True,
-                    trike_capacity=3,
-                    seed=seed,
-                    s_enqueue_radius_meters=50,
-                    enqueue_radius_meters=radius,
-                    maxCycles=2
-                )
-                if results:
-                    all_results['simulations'].append(results)
-                    completed_configs.add(config_key)
-                    save_progress(all_results, data_dir)
-                    completed_simulations += 1
-                    group_c_completed += 1
-                    update_progress()
 
     # Group D: Serving enqueue radius analysis
     print("\n=== Running Group D: Serving Enqueue Radius Analysis ===")
     for radius in s_enqueue_radii:
-        for run in range(num_runs):
+        for run in range(NUM_RUNS):
             seed = f"groupD_{radius}_{run}"
-            config_key = get_config_key(9, True, 3, radius, 100, 2)
-            
-            # Check if we already have this configuration
-            existing_sim = find_matching_simulation(all_results, config_key, 'groupD_')
-            if existing_sim:
-                print(f"\nReusing existing simulation for Group D - Serving Enqueue Radius: {radius} meters")
-                print(f"Configuration: trikes=9, capacity=3, e_radius=100, maxCycles=2")
-                # Copy the existing simulation with a new seed
-                new_sim = existing_sim.copy()
-                new_sim['metadata']['seed'] = seed
-                all_results['simulations'].append(new_sim)
+            print(f"\nTesting Group D - Serving Enqueue Radius: {radius} meters")
+            print(f"Fixed parameters: trikes=9, capacity=3, e_radius=100, maxCycles=2")
+            results = run_simulation(
+                9,  # Fixed number of tricycles
+                use_smart_scheduler=True,
+                trike_capacity=3,
+                seed=seed,
+                s_enqueue_radius_meters=radius,
+                enqueue_radius_meters=100,
+                maxCycles=2
+            )
+            if results:
+                all_results['simulations'].append(results)
                 save_progress(all_results, data_dir)
                 completed_simulations += 1
                 group_d_completed += 1
                 update_progress()
-            elif config_key not in completed_configs:
-                print(f"\nTesting Group D - Serving Enqueue Radius: {radius} meters")
-                print(f"Fixed parameters: trikes=9, capacity=3, e_radius=100, maxCycles=2")
-                results = run_simulation(
-                    9,  # Fixed number of tricycles
-                    use_smart_scheduler=True,
-                    trike_capacity=3,
-                    seed=seed,
-                    s_enqueue_radius_meters=radius,
-                    enqueue_radius_meters=100,
-                    maxCycles=2
-                )
-                if results:
-                    all_results['simulations'].append(results)
-                    completed_configs.add(config_key)
-                    save_progress(all_results, data_dir)
-                    completed_simulations += 1
-                    group_d_completed += 1
-                    update_progress()
 
     # Save final results
     final_file = os.path.join(data_dir, f'simulation_results_{datetime.now().strftime("%Y%m%d_%H%M%S")}.json')
@@ -391,10 +290,10 @@ def main():
         os.remove(progress_file)
 
     print(f"\nFinal Progress Summary:")
-    print(f"Group A: {group_a_completed}/{len(tricycle_counts) * num_runs} simulations completed")
-    print(f"Group B: {group_b_completed}/{len(tricycle_capacities) * num_runs} simulations completed")
-    print(f"Group C: {group_c_completed}/{len(enqueue_radii) * num_runs} simulations completed")
-    print(f"Group D: {group_d_completed}/{len(s_enqueue_radii) * num_runs} simulations completed")
+    print(f"Group A: {group_a_completed}/{len(tricycle_counts) * NUM_RUNS} simulations completed")
+    print(f"Group B: {group_b_completed}/{len(tricycle_capacities) * NUM_RUNS} simulations completed")
+    print(f"Group C: {group_c_completed}/{len(enqueue_radii) * NUM_RUNS} simulations completed")
+    print(f"Group D: {group_d_completed}/{len(s_enqueue_radii) * NUM_RUNS} simulations completed")
     print(f"Total simulations completed: {completed_simulations}/{total_simulations} ({(completed_simulations/total_simulations)*100:.1f}%)")
     print(f"Final results saved to: {final_file}")
 
