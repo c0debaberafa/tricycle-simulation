@@ -6,8 +6,8 @@
 
 // Simulation timing
 export const TIMING_CONFIG = {
-    frameDuration: 16,  // Target frame duration in ms (~60fps)
-    simulationFrameTime: 16,  // Time between simulation updates in ms
+    frameDuration: 25,  // Target frame duration in ms (~60fps)
+    simulationFrameTime: 25,  // Time between simulation updates in ms
     baseSpeedMultiplier: 2000  // Base speed multiplier for visualization
 };
 
@@ -22,15 +22,17 @@ export const MAP_CONFIG = {
 
 // API endpoints
 export const API_ENDPOINTS = {
-    simulation: (id, t, p) => `http://localhost:5050/real/${id}/${t}/${p}`,
-    terminals: (id) => `http://localhost:5052/real/${id}/terminals.json`
+    simulation: (id, t, p) => `http://localhost:5053/real/${id}/${t}/${p}`,
+    terminals: (id) => `http://localhost:5053/real/${id}/terminals.json`,
+    metadata: (id) => `http://localhost:5053/real/${id}/metadata.json`,
+    summary: (id) => `http://localhost:5053/real/${id}/summary.json`
 };
 
 // Default simulation parameters
 export const DEFAULT_SIMULATION = {
-    id: "3-2-100-gzxbcenlvgyx",
+    id: "15-2-100-yoagjowaldrl",
     trikes: 15,
-    passengers: 200
+    passengers: 100
 };
 
 // Utility functions

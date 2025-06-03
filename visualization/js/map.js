@@ -56,10 +56,25 @@ function initializeSimulation() {
     if (controlButton) {
         controlButton.onclick = function(e) {
             e.preventDefault();
-            window.IS_PAUSED = !window.IS_PAUSED;
-            this.textContent = window.IS_PAUSED ? '▶' : '‖';
+            togglePlayPause(this);
         };
     }
+
+    // Add spacebar control
+    document.addEventListener('keydown', function(e) {
+        if (e.code === 'Space' && !e.repeat) {
+            e.preventDefault();
+            const controlButton = document.querySelector('.control-button a');
+            if (controlButton) {
+                togglePlayPause(controlButton);
+            }
+        }
+    });
+}
+
+function togglePlayPause(button) {
+    window.IS_PAUSED = !window.IS_PAUSED;
+    button.textContent = window.IS_PAUSED ? '▶' : '◼';
 }
 
 function simulationTick() {
@@ -98,7 +113,27 @@ async function loadSimulationData(id, t, p) {
     if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
     }
-    return await response.json();
+    const data = await response.json();
+
+    // Load metadata and summary
+    try {
+        const metadataResponse = await fetch(API_ENDPOINTS.metadata(id));
+        const summaryResponse = await fetch(API_ENDPOINTS.summary(id));
+        
+        if (metadataResponse.ok && summaryResponse.ok) {
+            const metadata = await metadataResponse.json();
+            const summary = await summaryResponse.json();
+            
+            // Update metadata display
+            if (window.visualManager) {
+                window.visualManager.updateMetadata(metadata, summary);
+            }
+        }
+    } catch (error) {
+        console.error('Error loading metadata or summary:', error);
+    }
+
+    return data;
 }
 
 async function loadTerminalData(id) {

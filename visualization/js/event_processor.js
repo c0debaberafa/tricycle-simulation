@@ -58,7 +58,7 @@ export class EventProcessor {
                 const marker = this.visualManager.createEventMarker(
                     coords[0],  // latitude
                     coords[1],  // longitude
-                    `${passenger.id}: APPEAR`,
+                    `[Frame ${event.time || 0}] ${passenger.id}: APPEAR`,
                     passenger.id
                 );
                 
@@ -253,7 +253,12 @@ export class EventProcessor {
             switch (type) {
                 case 'CREATE':
                     if (!message.includes("ENQUEUE") && this.stateManager.isValidCoordinates([lat, lng])) {
-                        const newMarker = this.visualManager.createEventMarker(lat, lng, message, id);
+                        const newMarker = this.visualManager.createEventMarker(
+                            lat, 
+                            lng, 
+                            `[Frame ${event.time || 0}] ${message}`,
+                            id
+                        );
                         if (newMarker) {
                             this.visualManager.addMarker('event', id, newMarker);
                         }
@@ -403,123 +408,142 @@ export class EventProcessor {
             return;
         }
 
-        const eventPoint = marker.path[marker.currentPathIndex];
-        if (eventPoint && Array.isArray(eventPoint) && eventPoint.length === 2) {
-            // Convert OSRM [lng, lat] to Leaflet [lat, lng] for display
-            const leafletPosition = [eventPoint[1], eventPoint[0]];
-            marker.setLatLng(leafletPosition);
-            
-            // Convert [lng, lat] to [lat, lng] for createEventMarker
-            const latLng = [eventPoint[1], eventPoint[0]];
-            
-            switch (event.type) {
-                case "LOAD":
-                    // Create load event marker
-                    const newLoadMarker = this.visualManager.createEventMarker(latLng[0], latLng[1], `${event.data}: ${event.type}`, event.data);
-                    if (newLoadMarker) {
-                        this.visualManager.addMarker('load', event.data, newLoadMarker);
-                    }
-                    
-                    // Remove enqueue line for this passenger
-                    this.visualManager.removeEnqueueLine(event.data);
-                    
-                    // Update passenger state
-                    marker.passengers.add(event.data);
-                    // Remove the appear marker for this passenger
-                    const appearMarker = this.visualManager.markers.appear.get(event.data);
-                    if (appearMarker) {
-                        console.log('Removing appear marker for passenger:', event.data);
-                        appearMarker.remove();
-                        this.visualManager.markers.appear.delete(event.data);
-                    } else {
-                        console.log('No appear marker found for passenger:', event.data);
-                    }
-                    this.processEvent({
-                        type: 'UPDATE_PASSENGER',
-                        passengerId: event.data,
-                        newState: 'ONBOARD',
-                        trikeId: marker.id,
-                        passengers: marker.passengers
-                    });
-                    // Update tricycle state to SERVING
-                    this.processEvent({
-                        type: 'UPDATE_TRICYCLE',
-                        tricycleId: marker.id,
-                        newState: 'SERVING'
-                    });
-                    break;
-
-                case "DROP-OFF":
-                    // Create drop-off event marker
-                    const dropoffMarker = this.visualManager.createEventMarker(latLng[0], latLng[1], `${event.data}: ${event.type}`, event.data);
-                    if (dropoffMarker) {
-                        this.visualManager.addMarker('dropoff', event.data, dropoffMarker);
-                    }
-                    
-                    // Remove the load marker for this passenger
-                    const existingLoadMarker = this.visualManager.markers.load.get(event.data);
-                    if (existingLoadMarker) {
-                        console.log('Removing load marker for passenger:', event.data);
-                        existingLoadMarker.remove();
-                        this.visualManager.markers.load.delete(event.data);
-                    } else {
-                        console.log('No load marker found for passenger:', event.data);
-                    }
-                    
-                    // Update passenger state
-                    marker.passengers.delete(event.data);
-                    this.processEvent({
-                        type: 'UPDATE_PASSENGER',
-                        passengerId: event.data,
-                        newState: 'COMPLETED',
-                        trikeId: marker.id,
-                        passengers: marker.passengers
-                    });
-                    // Update tricycle state based on remaining passengers
-                    this.processEvent({
-                        type: 'UPDATE_TRICYCLE',
-                        tricycleId: marker.id,
-                        newState: marker.passengers.size > 0 ? 'SERVING' : 'DEFAULT'
-                    });
-                    break;
-
-                case "ENQUEUE":
-                    // Create enqueue line between trike and passenger
-                    const passengerMarker = this.visualManager.getMarker('appear', event.data);
-                    if (passengerMarker) {
-                        // Check if enqueue line already exists for this passenger
-                        const existingLine = this.visualManager.markers.enqueueLines.get(event.data);
-                        if (!existingLine) {
-                            console.log(`Creating enqueue line for passenger ${event.data}`);
-                            this.visualManager.createEnqueueLine(
-                                marker.id,
-                                event.data,
-                                marker.getLatLng(),
-                                passengerMarker.getLatLng()
-                            );
-                        } else {
-                            console.log(`Enqueue line already exists for passenger ${event.data}`);
-                        }
-                    }
-                    
-                    this.processEvent({
-                        type: 'UPDATE_PASSENGER',
-                        passengerId: event.data,
-                        newState: 'ENQUEUED',
-                        trikeId: marker.id,
-                        passengers: marker.passengers
-                    });
-                    // Update tricycle state to ENQUEUEING
-                    this.processEvent({
-                        type: 'UPDATE_TRICYCLE',
-                        tricycleId: marker.id,
-                        newState: 'ENQUEUEING'
-                    });
-                    break;
+        // Get event location from event data
+        let eventLocation;
+        if (event.location) {
+            // If event has its own location data, use it
+            eventLocation = [event.location[1], event.location[0]]; // Convert [x,y] to [lat,lng]
+        } else {
+            // Fallback to trike's current position if no event location
+            const eventPoint = marker.path[marker.currentPathIndex];
+            if (eventPoint && Array.isArray(eventPoint) && eventPoint.length === 2) {
+                eventLocation = [eventPoint[1], eventPoint[0]]; // Convert [lng,lat] to [lat,lng]
+            } else {
+                console.warn('No valid location data for event:', event);
+                return;
             }
-            
-            marker.currentEventIndex++;
         }
+
+        // Update trike position
+        marker.setLatLng(eventLocation);
+        
+        switch (event.type) {
+            case "LOAD":
+                // Create load event marker at event location
+                const newLoadMarker = this.visualManager.createEventMarker(
+                    eventLocation[0], 
+                    eventLocation[1], 
+                    `[Frame ${event.time || 0}] ${event.data}: ${event.type}`,
+                    marker.id  // Pass trike ID instead of passenger ID
+                );
+                if (newLoadMarker) {
+                    this.visualManager.addMarker('load', event.data, newLoadMarker);
+                }
+                
+                // Remove enqueue line for this passenger
+                this.visualManager.removeEnqueueLine(event.data);
+                
+                // Update passenger state
+                marker.passengers.add(event.data);
+                // Remove the appear marker for this passenger
+                const appearMarker = this.visualManager.markers.appear.get(event.data);
+                if (appearMarker) {
+                    console.log('Removing appear marker for passenger:', event.data);
+                    appearMarker.remove();
+                    this.visualManager.markers.appear.delete(event.data);
+                } else {
+                    console.log('No appear marker found for passenger:', event.data);
+                }
+                this.processEvent({
+                    type: 'UPDATE_PASSENGER',
+                    passengerId: event.data,
+                    newState: 'ONBOARD',
+                    trikeId: marker.id,
+                    passengers: marker.passengers
+                });
+                // Update tricycle state to SERVING
+                this.processEvent({
+                    type: 'UPDATE_TRICYCLE',
+                    tricycleId: marker.id,
+                    newState: 'SERVING'
+                });
+                break;
+
+            case "DROP-OFF":
+                // Create drop-off event marker at event location
+                const dropoffMarker = this.visualManager.createEventMarker(
+                    eventLocation[0], 
+                    eventLocation[1], 
+                    `[Frame ${event.time || 0}] ${event.data}: ${event.type}`,
+                    marker.id  // Pass trike ID instead of passenger ID
+                );
+                if (dropoffMarker) {
+                    this.visualManager.addMarker('dropoff', event.data, dropoffMarker);
+                }
+                
+                // Remove the load marker for this passenger
+                const existingLoadMarker = this.visualManager.markers.load.get(event.data);
+                if (existingLoadMarker) {
+                    console.log('Removing load marker for passenger:', event.data);
+                    existingLoadMarker.remove();
+                    this.visualManager.markers.load.delete(event.data);
+                } else {
+                    console.log('No load marker found for passenger:', event.data);
+                }
+                
+                // Update passenger state
+                marker.passengers.delete(event.data);
+                this.processEvent({
+                    type: 'UPDATE_PASSENGER',
+                    passengerId: event.data,
+                    newState: 'COMPLETED',
+                    trikeId: marker.id,
+                    passengers: marker.passengers
+                });
+                // Update tricycle state based on remaining passengers
+                this.processEvent({
+                    type: 'UPDATE_TRICYCLE',
+                    tricycleId: marker.id,
+                    newState: marker.passengers.size > 0 ? 'SERVING' : 'DEFAULT'
+                });
+                break;
+
+            case "ENQUEUE":
+                // Create enqueue line between trike and passenger
+                const passengerMarker = this.visualManager.getMarker('appear', event.data);
+                if (passengerMarker) {
+                    // Check if enqueue line already exists for this passenger
+                    const existingLine = this.visualManager.markers.enqueueLines.get(event.data);
+                    if (!existingLine) {
+                        console.log(`Creating enqueue line for passenger ${event.data}`);
+                        this.visualManager.createEnqueueLine(
+                            marker.id,
+                            event.data,
+                            marker.getLatLng(),
+                            passengerMarker.getLatLng()
+                        );
+                    } else {
+                        console.log(`Enqueue line already exists for passenger ${event.data}`);
+                    }
+                }
+                
+                this.processEvent({
+                    type: 'UPDATE_PASSENGER',
+                    passengerId: event.data,
+                    newState: 'ENQUEUED',
+                    trikeId: marker.id,
+                    passengers: marker.passengers
+                });
+                // Update tricycle state to ENQUEUEING
+                this.processEvent({
+                    type: 'UPDATE_TRICYCLE',
+                    tricycleId: marker.id,
+                    newState: 'ENQUEUEING'
+                });
+                break;
+        }
+        
+        marker.currentEventIndex++;
     }
 
     handleWaitEvent(marker, event, timestamp) {

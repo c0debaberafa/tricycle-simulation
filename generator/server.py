@@ -58,3 +58,21 @@ def roam_endpoints(id):
             return json.load(f)
     except Exception as e:
         return {"error": str(e)}, 404
+
+@app.route('/real/<id>/metadata.json')
+def metadata(id):
+    """Serve metadata."""
+    try:
+        with open(f'data/real/{id}/metadata.json') as f:
+            return json.load(f)
+    except Exception as e:
+        return {"error": str(e)}, 404
+
+@app.route('/real/<id>/summary.json')
+def summary(id):
+    """Serve summary statistics."""
+    try:
+        with open(f'data/real/{id}/summary.json') as f:
+            return json.load(f)
+    except Exception as e:
+        return {"error": str(e)}, 404

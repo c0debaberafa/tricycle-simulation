@@ -14,6 +14,8 @@
     box-shadow: 0 -2px 10px rgba(0,0,0,0.3);
     min-height: 100px;
     max-height: 80vh;
+    display: flex;
+    flex-direction: column;
 }
 
 .resize-handle {
@@ -43,6 +45,7 @@
     background: #222;
     border-bottom: 1px solid #444;
     padding: 5px 5px 0;
+    flex-shrink: 0;
 }
 
 .tab-button {
@@ -69,8 +72,10 @@
 }
 
 .tab-content {
-    height: calc(100% - 40px);
-    padding: 10px;
+    flex: 1;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
 }
 
 .tab-pane {
@@ -81,10 +86,12 @@
     font-size: 14px;
     line-height: 1.4;
     color: white;
+    padding: 0;
 }
 
 .tab-pane.active {
-    display: block;
+    display: flex;
+    flex-direction: column;
 }
 
 .event-log {
@@ -137,66 +144,70 @@
     border-left-color: #00BCD4;
 }
 
-#passengerStatus {
+/* Status Panels Common Styles */
+#passengerStatus, #tricycleStatus {
     height: 100%;
     overflow-y: auto;
-    overflow-x: auto;
-    white-space: nowrap;
-}
-
-#tricycleStatus {
-    height: 100%;
-    overflow-y: auto;
-    overflow-x: auto;
-    white-space: nowrap;
-}
-
-#metadataContent {
-    height: 100%;
-    overflow-y: auto;
-}
-
-/* Passenger Status Panel */
-.status-rows {
+    overflow-x: hidden;
+    white-space: normal;
     display: flex;
-    height: 100%;
-    gap: 10px;
-    padding: 10px;
-    min-width: max-content;
+    flex-direction: column;
+    padding: 0;
+    margin: 0;
 }
 
-.status-labels {
+.status-rows {
     display: flex;
     flex-direction: column;
     gap: 10px;
-    font-weight: bold;
-    color: #fff;
-    position: sticky;
-    left: 0;
+    width: 100%;
+    padding: 10px;
     background: black;
-    padding-right: 10px;
-    z-index: 1;
+    flex-shrink: 0;
+    margin: 0;
 }
 
 .status-content {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-    flex-grow: 1;
+    flex: 1;
     overflow-y: auto;
-    min-width: max-content;
+    padding: 0;
+    margin: 0;
 }
 
 .status-group {
-    display: flex;
-    flex-wrap: nowrap;
-    gap: 5px;
+    display: grid;
+    grid-template-columns: 120px 60px 1fr;
+    align-items: start;
+    gap: 10px;
     min-height: 24px;
-    padding: 2px;
+    padding: 2px 8px;
     border-radius: 4px;
-    overflow-x: auto;
+    width: 100%;
+    margin: 0;
 }
 
+.status-label {
+    font-weight: bold;
+    color: #fff;
+    padding-top: 2px;
+}
+
+.status-count {
+    color: #fff;
+    font-family: monospace;
+    text-align: center;
+    padding-top: 2px;
+}
+
+.status-members {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    padding: 2px 0;
+    width: 100%;
+}
+
+/* Passenger Status Specific Styles */
 .status-group.waiting {
     background-color: rgba(255, 68, 68, 0.2);
 }
@@ -213,12 +224,31 @@
     background-color: rgba(68, 255, 68, 0.2);
 }
 
-.passenger-id {
+/* Tricycle Status Specific Styles */
+.status-group.default {
+    background-color: rgba(68, 255, 68, 0.2);
+}
+
+.status-group.enqueueing {
+    background-color: rgba(255, 0, 0, 0.2);
+}
+
+.status-group.serving {
+    background-color: rgba(255, 165, 0, 0.2);
+}
+
+/* Common ID Styles */
+.passenger-id, .tricycle-id {
     background-color: rgba(255, 255, 255, 0.1);
     padding: 2px 6px;
     border-radius: 4px;
     font-size: 12px;
     color: #fff;
+    margin: 0;
+    white-space: nowrap;
+    height: 20px;
+    line-height: 16px;
+    flex-shrink: 0;
 }
 
 /* Event Log */
@@ -241,18 +271,18 @@
 
 .frame-controls {
     position: absolute;
-    top: 10px;
-    right: 10px;
+    top: -64px;
+    left: 16;
     z-index: 1000;
-    background: rgba(0, 0, 0, 0.7);
+    background: black;
     padding: 10px;
-    border-radius: 4px;
 }
 
 .frame-info {
     display: flex;
     align-items: center;
     gap: 10px;
+    flex-direction: row-reverse;
 }
 
 #frameCounter {
@@ -274,14 +304,14 @@
     text-align: center;
     text-decoration: none;
     color: white;
-    background: #4CAF50;
+    background: #333;
     border-radius: 4px;
     font-size: 18px;
     transition: background-color 0.2s;
 }
 
 .control-button a:hover {
-    background: #45a049;
+    background: #444;
 }
 
 /* Remove old slider styles */
@@ -289,24 +319,149 @@
     display: none;
 }
 
-/* Tricycle Status Panel */
-.status-group.default {
-    background-color: rgba(0, 0, 255, 0.2);
-    color: green;
+/* Event Log Styles */
+#eventLog {
+    font-family: monospace;
+    font-size: 12px;
+    line-height: 1.4;
+    padding: 10px;
+    overflow-y: auto;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
 }
 
-.status-group.enqueueing {
+.event-log-entry {
+    display: grid;
+    grid-template-columns: 80px 120px 100px 1fr;
+    gap: 10px;
+    padding: 2px 0;
+    margin-top: auto;
+}
+
+.event-log-entry span {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.event-frame {
+    color: #ffffff;
+}
+
+.event-id {
+    color: #ffffff;
+}
+
+.event-type {
+    color: #ffffff;
+}
+
+.event-data {
+    color: #ffffff;
+}
+
+/* Color coding for different event types */
+.event-log-entry[data-event-type="APPEAR"] .event-type { color: #ff0000; }
+.event-log-entry[data-event-type="ENQUEUE"] .event-type { color: #ff0000; }
+.event-log-entry[data-event-type="LOAD"] .event-type { color: #fea400; }
+.event-log-entry[data-event-type="DROP-OFF"] .event-type { color: #018001; }
+.event-log-entry[data-event-type="NEW_ROAM_PATH"] .event-type { color: #9900cc; }
+
+/* Tricycle Status Panel */
+#tricycleStatus {
+    height: 100%;
+    overflow-y: auto;
+    overflow-x: auto;
+    white-space: nowrap;
+    padding: 10px;
+}
+
+#tricycleStatus .status-rows {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    min-width: max-content;
+}
+
+#tricycleStatus .status-group {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-height: 24px;
+    padding: 2px 8px;
+    border-radius: 4px;
+    overflow-x: auto;
+}
+
+#tricycleStatus .status-label {
+    font-weight: bold;
+    color: #fff;
+    min-width: 80px;
+}
+
+#tricycleStatus .status-group.default {
+    background-color: rgba(68, 255, 68, 0.2);
+}
+
+#tricycleStatus .status-group.enqueueing {
     background-color: rgba(255, 0, 0, 0.2);
 }
 
-.status-group.serving {
+#tricycleStatus .status-group.serving {
     background-color: rgba(255, 165, 0, 0.2);
 }
 
-.tricycle-id {
+#tricycleStatus .tricycle-id {
     background-color: rgba(255, 255, 255, 0.1);
     padding: 2px 6px;
     border-radius: 4px;
     font-size: 12px;
     color: #fff;
+    margin: 2px;
+}
+
+/* Metadata Table Styles */
+#metadataContent {
+    padding: 10px;
+    margin-top: 0;
+}
+
+.metadata-section {
+    margin-bottom: 20px;
+}
+
+.metadata-section:first-child {
+    margin-top: 0;
+}
+
+.metadata-section h3 {
+    margin: 0 0 10px 0;
+    color: #fff;
+    font-size: 16px;
+}
+
+.metadata-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+    color: #fff;
+}
+
+.metadata-table td {
+    padding: 4px 8px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.metadata-table td:first-child {
+    color: #aaa;
+    width: 60%;
+}
+
+.metadata-table td:last-child {
+    text-align: left;
+}
+
+.metadata-table tr:hover td {
+    background-color: rgba(255, 255, 255, 0.05);
 }

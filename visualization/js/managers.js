@@ -257,35 +257,37 @@ export class VisualManager {
         const statusPanel = document.getElementById('passenger-status');
         if (!statusPanel) return;
 
-        // Create status rows if they don't exist
-        if (!statusPanel.querySelector('.status-rows')) {
-            const statusRows = document.createElement('div');
-            statusRows.className = 'status-rows';
+        // Clear existing content
+        statusPanel.innerHTML = '';
+
+        // Create status rows
+        const statusRows = document.createElement('div');
+        statusRows.className = 'status-rows';
+        
+        // Create status groups with labels
+        const states = ['WAITING', 'ENQUEUED', 'ONBOARD', 'COMPLETED'];
+        states.forEach(state => {
+            const group = document.createElement('div');
+            group.className = `status-group ${state.toLowerCase()}`;
             
-            // Create labels
-            const labels = document.createElement('div');
-            labels.className = 'status-labels';
-            labels.innerHTML = `
-                <div>WAITING</div>
-                <div>ENQUEUED</div>
-                <div>ONBOARD</div>
-                <div>COMPLETED</div>
-            `;
-            statusRows.appendChild(labels);
+            const label = document.createElement('div');
+            label.className = 'status-label';
+            label.textContent = state;
+            
+            const count = document.createElement('div');
+            count.className = 'status-count';
+            count.textContent = '(0)';
+            
+            const members = document.createElement('div');
+            members.className = 'status-members';
+            
+            group.appendChild(label);
+            group.appendChild(count);
+            group.appendChild(members);
+            statusRows.appendChild(group);
+        });
 
-            // Create content
-            const content = document.createElement('div');
-            content.className = 'status-content';
-            content.innerHTML = `
-                <div class="status-group waiting"></div>
-                <div class="status-group enqueued"></div>
-                <div class="status-group onboard"></div>
-                <div class="status-group completed"></div>
-            `;
-            statusRows.appendChild(content);
-
-            statusPanel.appendChild(statusRows);
-        }
+        statusPanel.appendChild(statusRows);
 
         // Update each status group
         const groups = {
@@ -295,28 +297,35 @@ export class VisualManager {
             COMPLETED: statusPanel.querySelector('.completed')
         };
 
-        // Clear existing content
-        Object.values(groups).forEach(group => {
-            if (group) group.innerHTML = '';
-        });
-
-        // Add passengers to their respective groups
+        // Update each group's content
         Object.entries(passengerStates).forEach(([state, passengers]) => {
             const group = groups[state];
             if (!group) return;
 
-            // Convert passenger IDs to numbers and sort them
-            const sortedPassengers = Array.from(passengers)
-                .map(id => parseInt(id.replace('passenger_', '')))
-                .sort((a, b) => a - b);
+            // Update count
+            const count = group.querySelector('.status-count');
+            if (count) {
+                count.textContent = `(${passengers.size})`;
+            }
 
-            // Create passenger elements
-            sortedPassengers.forEach(num => {
-                const passenger = document.createElement('div');
-                passenger.className = 'passenger-id';
-                passenger.textContent = num;
-                group.appendChild(passenger);
-            });
+            // Update members
+            const members = group.querySelector('.status-members');
+            if (members) {
+                members.innerHTML = '';
+
+                // Convert passenger IDs to numbers and sort them
+                const sortedPassengers = Array.from(passengers)
+                    .map(id => parseInt(id.replace('passenger_', '')))
+                    .sort((a, b) => a - b);
+
+                // Create passenger elements
+                sortedPassengers.forEach(num => {
+                    const passenger = document.createElement('div');
+                    passenger.className = 'passenger-id';
+                    passenger.textContent = `P${num}`;
+                    members.appendChild(passenger);
+                });
+            }
         });
     }
 
@@ -324,33 +333,37 @@ export class VisualManager {
         const statusPanel = document.getElementById('tricycle-status');
         if (!statusPanel) return;
 
-        // Create status rows if they don't exist
-        if (!statusPanel.querySelector('.status-rows')) {
-            const statusRows = document.createElement('div');
-            statusRows.className = 'status-rows';
+        // Clear existing content
+        statusPanel.innerHTML = '';
+
+        // Create status rows
+        const statusRows = document.createElement('div');
+        statusRows.className = 'status-rows';
+        
+        // Create status groups with labels - reordered to show DEFAULT last
+        const states = ['ENQUEUEING', 'SERVING', 'DEFAULT'];
+        states.forEach(state => {
+            const group = document.createElement('div');
+            group.className = `status-group ${state.toLowerCase()}`;
             
-            // Create labels
-            const labels = document.createElement('div');
-            labels.className = 'status-labels';
-            labels.innerHTML = `
-                <div>DEFAULT</div>
-                <div>ENQUEUEING</div>
-                <div>SERVING</div>
-            `;
-            statusRows.appendChild(labels);
+            const label = document.createElement('div');
+            label.className = 'status-label';
+            label.textContent = state;
+            
+            const count = document.createElement('div');
+            count.className = 'status-count';
+            count.textContent = '(0)';
+            
+            const members = document.createElement('div');
+            members.className = 'status-members';
+            
+            group.appendChild(label);
+            group.appendChild(count);
+            group.appendChild(members);
+            statusRows.appendChild(group);
+        });
 
-            // Create content
-            const content = document.createElement('div');
-            content.className = 'status-content';
-            content.innerHTML = `
-                <div class="status-group default"></div>
-                <div class="status-group enqueueing"></div>
-                <div class="status-group serving"></div>
-            `;
-            statusRows.appendChild(content);
-
-            statusPanel.appendChild(statusRows);
-        }
+        statusPanel.appendChild(statusRows);
 
         // Update each status group
         const groups = {
@@ -359,46 +372,53 @@ export class VisualManager {
             SERVING: statusPanel.querySelector('.serving')
         };
 
-        // Clear existing content
-        Object.values(groups).forEach(group => {
-            if (group) group.innerHTML = '';
-        });
-
-        // Add tricycles to their respective groups
+        // Update each group's content
         Object.entries(tricycleStates).forEach(([state, tricycles]) => {
             const group = groups[state];
             if (!group) return;
 
-            // Convert tricycle IDs to numbers and sort them
-            const sortedTricycles = Array.from(tricycles)
-                .map(id => parseInt(id.replace('trike_', '')))
-                .sort((a, b) => a - b);
+            // Update count
+            const count = group.querySelector('.status-count');
+            if (count) {
+                count.textContent = `(${tricycles.size})`;
+            }
 
-            // Create tricycle elements
-            sortedTricycles.forEach(num => {
-                const tricycle = document.createElement('div');
-                tricycle.className = 'tricycle-id';
-                
-                // Get the trike marker to check for passengers
-                const trikeId = `trike_${num}`;
-                const trikeMarker = this.getMarker('trike', trikeId);
-                let passengerInfo = '';
-                
-                if (trikeMarker && trikeMarker.getTooltip) {
-                    const tooltip = trikeMarker.getTooltip();
-                    if (tooltip && tooltip.getContent) {
-                        const content = tooltip.getContent();
-                        // Extract passenger numbers from tooltip content
-                        const passengerMatch = content.match(/P\d+/g);
-                        if (passengerMatch) {
-                            passengerInfo = ` (${passengerMatch.join(' ')})`;
+            // Update members
+            const members = group.querySelector('.status-members');
+            if (members) {
+                members.innerHTML = '';
+
+                // Convert tricycle IDs to numbers and sort them
+                const sortedTricycles = Array.from(tricycles)
+                    .map(id => parseInt(id.replace('trike_', '')))
+                    .sort((a, b) => a - b);
+
+                // Create tricycle elements
+                sortedTricycles.forEach(num => {
+                    const tricycle = document.createElement('div');
+                    tricycle.className = 'tricycle-id';
+                    
+                    // Get the trike marker to check for passengers
+                    const trikeId = `trike_${num}`;
+                    const trikeMarker = this.getMarker('trike', trikeId);
+                    let passengerInfo = '';
+                    
+                    if (trikeMarker && trikeMarker.getTooltip) {
+                        const tooltip = trikeMarker.getTooltip();
+                        if (tooltip && tooltip.getContent) {
+                            const content = tooltip.getContent();
+                            // Extract passenger numbers from tooltip content
+                            const passengerMatch = content.match(/P\d+/g);
+                            if (passengerMatch) {
+                                passengerInfo = ` (${passengerMatch.join(' ')})`;
+                            }
                         }
                     }
-                }
-                
-                tricycle.textContent = `T${num}${passengerInfo}`;
-                group.appendChild(tricycle);
-            });
+                    
+                    tricycle.textContent = `T${num}${passengerInfo}`;
+                    members.appendChild(tricycle);
+                });
+            }
         });
     }
 
@@ -459,22 +479,40 @@ export class VisualManager {
 
     // Add method to update trike marker color
     updateTrikeColor(marker, status) {
+        // Check if this trike has any active enqueue lines
+        for (const [passengerId, lineData] of this.markers.enqueueLines) {
+            if (lineData.trikeId === marker.id) {
+                marker.setIcon(L.divIcon({
+                    className: 'trike-marker',
+                    html: `<div style="
+                        width: 12px;
+                        height: 12px;
+                        border-radius: 50%;
+                        border: 4px solid red;
+                        background-color: transparent;
+                    "></div>`
+                }));
+                return;
+            }
+        }
+
+        // Otherwise, use the normal status-based coloring
         let color;
         switch(status) {
             case 'DEFAULT':
                 color = 'green';
                 break;
             case 'ENQUEUEING':
-                color = 'red'; // Red
+                color = 'red';
                 break;
             case 'SERVING':
-                color = 'orange'; // Orange
+                color = 'orange';
                 break;
             default:
-                color = 'blue'; // Default to blue
+                color = 'green';
         }
 
-        const markerIcon = L.divIcon({
+        marker.setIcon(L.divIcon({
             className: 'trike-marker',
             html: `<div style="
                 width: 12px;
@@ -483,9 +521,7 @@ export class VisualManager {
                 border: 4px solid ${color};
                 background-color: transparent;
             "></div>`
-        });
-
-        marker.setIcon(markerIcon);
+        }));
     }
 
     // Add method to update trike tooltip
@@ -498,10 +534,58 @@ export class VisualManager {
         }).map(p => `P${p.split('_')[1]}`).join(' ');
         
         marker.unbindTooltip();
-        marker.bindTooltip(`T${trikeNum}: ${passengerList}`, {
+        const tooltipText = passengers.size > 0 ? `T${trikeNum} (${passengerList})` : `T${trikeNum}`;
+        marker.bindTooltip(tooltipText, {
             permanent: false,
             direction: 'top'
         });
+    }
+
+    // Add method to update metadata content
+    updateMetadata(metadata, summary) {
+        const metadataContent = document.getElementById('metadataContent');
+        metadataContent.innerHTML = '';
+
+        // Create simulation summary section
+        const summarySection = document.createElement('div');
+        summarySection.className = 'metadata-section';
+        summarySection.innerHTML = `
+            <h3>Simulation Summary</h3>
+            <table class="metadata-table">
+                <tr><td>Total Trips Completed:</td><td>${summary.total_trips_completed}</td></tr>
+                <tr><td>Completion Rate:</td><td>${summary.completion_rate.toFixed(1)}%</td></tr>
+                <tr><td>Average Wait Time:</td><td>${summary.average_wait_time.toFixed(1)}s</td></tr>
+                <tr><td>Average Travel Time:</td><td>${summary.average_travel_time.toFixed(1)}s</td></tr>
+                <tr><td>Total Distance:</td><td>${summary.total_distance_km.toFixed(1)}km</td></tr>
+                <tr><td>Productive Distance:</td><td>${summary.productive_distance_km.toFixed(1)}km</td></tr>
+                <tr><td>Efficiency:</td><td>${summary.efficiency_percentage.toFixed(1)}%</td></tr>
+                <tr><td>Active Tricycles:</td><td>${summary.active_tricycles}</td></tr>
+            </table>
+        `;
+        metadataContent.appendChild(summarySection);
+
+        // Create simulation parameters section
+        const paramsSection = document.createElement('div');
+        paramsSection.className = 'metadata-section';
+        paramsSection.innerHTML = `
+            <h3>Simulation Parameters</h3>
+            <table class="metadata-table">
+                <tr><td>Total Tricycles:</td><td>${metadata.totalTrikes}</td></tr>
+                <tr><td>Total Terminals:</td><td>${metadata.totalTerminals}</td></tr>
+                <tr><td>Total Passengers:</td><td>${metadata.totalPassengers}</td></tr>
+                <tr><td>Smart Scheduling:</td><td>${metadata.smartScheduling ? 'Yes' : 'No'}</td></tr>
+                <tr><td>Tricycle Capacity:</td><td>${metadata.trikeConfig.capacity}</td></tr>
+                <tr><td>Realistic Mode:</td><td>${metadata.isRealistic ? 'Yes' : 'No'}</td></tr>
+                <tr><td>Fixed Hotspots:</td><td>${metadata.useFixedHotspots ? 'Yes' : 'No'}</td></tr>
+                <tr><td>Fixed Terminals:</td><td>${metadata.useFixedTerminals ? 'Yes' : 'No'}</td></tr>
+                <tr><td>Road Passenger Chance:</td><td>${metadata.roadPassengerChance}</td></tr>
+                <tr><td>Roaming Tricycle Chance:</td><td>${metadata.roamingTrikeChance}</td></tr>
+                <tr><td>Servicing Enqueue Radius:</td><td>${metadata.trikeConfig.s_enqueue_radius_meters}m</td></tr>
+                <tr><td>Regular Enqueue Radius:</td><td>${metadata.trikeConfig.enqueue_radius_meters}m</td></tr>
+                <tr><td>Max Cycles:</td><td>${metadata.trikeConfig.maxCycles}</td></tr>
+            </table>
+        `;
+        metadataContent.appendChild(paramsSection);
     }
 
     // Add event logging functionality
@@ -518,82 +602,27 @@ export class VisualManager {
         entry.className = 'event-log-entry';
         entry.setAttribute('data-event-type', type);
         
-        // Format the event message with frame, id, type, and data
-        let message = `[Frame ${time}] `;
+        // Create a grid layout for the event log entry
+        entry.innerHTML = `
+            <span class="event-frame">[${time}]</span>
+            <span class="event-id">${id}</span>
+            <span class="event-type">${type}</span>
+            <span class="event-data">${data ? (typeof data === 'string' ? data : 
+                (data.location ? `[${data.location[0].toFixed(6)}, ${data.location[1].toFixed(6)}]` :
+                (data.coordinates ? `[${data.coordinates[0].toFixed(6)}, ${data.coordinates[1].toFixed(6)}]` : ''))) : ''}</span>
+        `;
         
-        // Add entity type prefix
-        message += `${id}: `;
-
-        
-        // Add event type with appropriate emoji
-        switch (type) {
-            case 'APPEAR':
-                message += '📍 APPEAR';
-                break;
-            case 'NEW_ROAM_PATH':
-                message += '🛣️ NEW_ROAM_PATH';
-                break;
-            case 'ENQUEUE':
-                message += '⏳ ENQUEUE';
-                if (data && typeof data === 'string') {
-                    message += ` ${data}`;
-                }
-                break;
-            case 'MOVE':
-                message += `🚶 MOVE`;
-                break;
-            case 'LOAD':
-                message += `⬆️ LOAD`;
-                if (data && typeof data === 'string') {
-                    message += ` ${data}`;
-                }
-                break;
-            case 'WAIT':
-                message += `⏸️ WAIT`;
-                if (data && typeof data === 'number') {
-                    message += ` (${data} frames)`;
-                }
-                break;
-            case 'DROP-OFF':
-                message += `⬇️ DROP-OFF`;
-                if (data && typeof data === 'string') {
-                    message += ` ${data}`;
-                }
-                break;
-            default:
-                message += type;
-        }
-        
-        // Add location data if available
-        if (data && typeof data === 'object') {
-            if (data.location && Array.isArray(data.location)) {
-                message += ` at [${data.location[0].toFixed(6)}, ${data.location[1].toFixed(6)}]`;
-            } else if (data.coordinates && Array.isArray(data.coordinates)) {
-                message += ` at [${data.coordinates[0].toFixed(6)}, ${data.coordinates[1].toFixed(6)}]`;
-            }
-        }
-        
-        entry.textContent = message;
         eventLog.appendChild(entry);
         eventLog.scrollTop = eventLog.scrollHeight;
-        
-        // Debug logging
-        // console.log('Logged event:', {
-        //     time,
-        //     id,
-        //     type,
-        //     data,
-        //     message
-        // });
     }
 
     // Add method to create event marker
     createEventMarker(lat, lng, message, id) {
-        // console.log('Creating event marker:', { lat, lng, message, id });
+        console.log('Creating event marker:', { lat, lng, message, id });
         
         // Only skip enqueue events, not passenger appear events
         if (message.includes("ENQUEUE")) {
-            // console.log('Skipping ENQUEUE event');
+            console.log('Skipping ENQUEUE event');
             return null;
         }
 
@@ -609,6 +638,76 @@ export class VisualManager {
         const offset = window.tooltipStackCounter[key] * 24; // 24px per stacked tooltip
         window.tooltipStackCounter[key] += 1;
 
+        // Extract frame number from message
+        const frameMatch = message.match(/\[Frame (\d+)\]/);
+        const frameNumber = frameMatch ? frameMatch[1] : '0';
+
+        // Extract event type and IDs
+        let eventType = '';
+        let passengerId = '';
+        let trikeId = '';
+        
+        // First check if the id parameter is a trike
+        if (id && id.startsWith('trike_')) {
+            trikeId = `T${id.split('_')[1]}`;
+        }
+        
+        if (message.includes('APPEAR')) {
+            eventType = 'APPEAR';
+            // For APPEAR events, use the id parameter
+            if (id.startsWith('trike_')) {
+                trikeId = `T${id.split('_')[1]}`;
+            } else if (id.startsWith('passenger_')) {
+                passengerId = `P${id.split('_')[1]}`;
+            }
+        } else if (message.includes('NEW_ROAM_PATH')) {
+            eventType = 'NEW_ROAM_PATH';
+            if (id.startsWith('trike_')) {
+                trikeId = `T${id.split('_')[1]}`;
+            }
+        } else if (message.includes('LOAD')) {
+            eventType = 'LOAD';
+            // Extract trike ID from the message if not already set
+            if (!trikeId) {
+                const trikeMatch = message.match(/trike_(\d+)/);
+                if (trikeMatch) {
+                    trikeId = `T${trikeMatch[1]}`;
+                }
+            }
+            // Extract passenger ID from the message
+            const passengerMatch = message.match(/passenger_(\d+)/);
+            if (passengerMatch) {
+                passengerId = `P${passengerMatch[1]}`;
+            }
+        } else if (message.includes('DROP-OFF')) {
+            eventType = 'DROP-OFF';
+            // Extract trike ID from the message if not already set
+            if (!trikeId) {
+                const trikeMatch = message.match(/trike_(\d+)/);
+                if (trikeMatch) {
+                    trikeId = `T${trikeMatch[1]}`;
+                }
+            }
+            // Extract passenger ID from the message
+            const passengerMatch = message.match(/passenger_(\d+)/);
+            if (passengerMatch) {
+                passengerId = `P${passengerMatch[1]}`;
+            }
+        }
+
+        console.log('Extracted IDs:', { trikeId, passengerId });
+
+        // Format the tooltip text
+        let tooltipText = `[${frameNumber}]`;
+        if (trikeId) {
+            tooltipText += ` ${trikeId}`;
+        }
+        tooltipText += ` ${eventType}`;
+        if (passengerId) {
+            tooltipText += ` ${passengerId}`;
+        }
+        console.log('Tooltip text:', tooltipText);
+
         // Determine marker color based on event type
         const isLoad = message.includes("LOAD");
         const isDropoff = message.includes("DROP-OFF");
@@ -616,15 +715,6 @@ export class VisualManager {
         const isTrikeAppear = message.includes("APPEAR") && id.startsWith("trike");
         const isEnqueue = message.includes("ENQUEUE") && id.startsWith("passenger");
         const isReset = message.includes("RESET") && id.startsWith("passenger");
-
-        // console.log('Event type detection:', {
-        //     isLoad,
-        //     isDropoff,
-        //     isPassengerAppear,
-        //     isTrikeAppear,
-        //     isEnqueue,
-        //     isReset
-        // });
 
         let markerColor;
         if (isPassengerAppear) {
@@ -643,13 +733,13 @@ export class VisualManager {
             markerColor = 'gray';
         }
         
-        // Create the marker - coordinates are in [lat, lng] format as received
+        // Create the marker
         const marker = L.marker([lat, lng], {
             icon: L.divIcon({
                 className: 'event-marker',
                 html: `<div style="background-color: ${markerColor}; width: 8px; height: 8px; border-radius: 50%;"></div>`,
                 iconSize: [8, 8],
-                iconAnchor: [4, 4]  // Center the icon
+                iconAnchor: [4, 4]
             })
         });
 
@@ -662,9 +752,9 @@ export class VisualManager {
             return null;
         }
 
-        // Add tooltip
-        marker.bindTooltip(message, {
-            permanent: false, // Only show on hover
+        // Add tooltip with new format
+        marker.bindTooltip(tooltipText, {
+            permanent: false,
             direction: 'top',
             className: 'event-tooltip-stacked',
             offset: [0, -offset]
@@ -740,7 +830,7 @@ export class VisualManager {
                 width: 12px;
                 height: 12px;
                 border-radius: 50%;
-                border: 4px solid #0000FF;
+                border: 4px solid rgba(68, 255, 68, 1);
                 background-color: transparent;
             "></div>`
         });

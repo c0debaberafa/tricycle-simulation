@@ -156,7 +156,7 @@ L.MovingMarker = L.Marker.extend({
                 width: 12px;
                 height: 12px;
                 border-radius: 50%;
-                border: 4px solid #0000FF;
+                border: 4px solid rgba(68, 255, 68, 1);
                 background-color: transparent;
             "></div>`
         });
@@ -165,6 +165,8 @@ L.MovingMarker = L.Marker.extend({
         // Add to visual manager
         if (window.visualManager) {
             window.visualManager.addMarker('trike', this.id, this);
+            // Set initial color using updateTrikeColor
+            window.visualManager.updateTrikeColor(this, 'DEFAULT');
         }
     },
 
